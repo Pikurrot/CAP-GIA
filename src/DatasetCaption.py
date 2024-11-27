@@ -36,6 +36,8 @@ class FlickrDataset(Dataset):
 		self.vocab = set()
 		for caption in self.cap_data['caption']:
 			self.vocab.update(caption.split())
+		extra_tokens = ['<start>', '<end>', '<pad>', '<unk>']
+		self.vocab.update(extra_tokens)
 		self.vocab = sorted(self.vocab)
 		self.word2idx = {word: idx for idx, word in enumerate(self.vocab)}
 		self.idx2word = {idx: word for word, idx in self.word2idx.items()}
@@ -53,7 +55,23 @@ class FlickrDataset(Dataset):
 			image = transform(image)
 		caption = self.cap_data.iloc[idx, 1]
 		return image, caption
-	
+
+
+def collate_fn(batch, word2idx):
+	images, captions = zip(*batch)
+	images = torch.stack(images, dim=0)
+	captions = [
+		torch.tensor(
+			[word2idx['<start>']] + 
+			[word2idx.get(word, word2idx['<unk>']) for word in caption.split()] + 
+			[word2idx['<end>']]
+		) 
+		for caption in captions
+	]
+	captions = torch.nn.utils.rnn.pad_sequence(captions, batch_first=True, padding_value=word2idx['<pad>'])
+	return images, captions
+
+
 if __name__ == '__main__':
 	data_path = "/media/eric/D/datasets/flickr-8k"
 	dataset = FlickrDataset(data_path)
