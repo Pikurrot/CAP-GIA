@@ -25,36 +25,48 @@ def train(
 			config=config
 		)
 
-	# Prepare the dataset and model
+	# Prepare the dataset
 	print(f"Preparing dataset {dataset_name}...")
 	device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 	data_path = os.path.join(data_dir, dataset_name)
 	if dataset_name.startswith("flickr"):
-		dataset = FlickrDataset(
-			data_path=data_path
+		train_set = FlickrDataset(
+			data_path=data_path,
+			split="train"
 		)
-	print(f"Vocabulary size: {dataset.vocab_size}")
-	dataloader = DataLoader(
-		dataset,
+		val_set = FlickrDataset(
+			data_path=data_path,
+			split="val"
+		)
+	print(f"Vocabulary size: {train_set.vocab_size}")
+	train_loader = DataLoader(
+		train_set,
 		batch_size=config["batch_size"],
 		shuffle=True,
-		collate_fn=lambda x: collate_fn(x, dataset.word2idx)
+		collate_fn=lambda x: collate_fn(x, train_set.word2idx)
+	)
+	val_loader = DataLoader(
+		val_set,
+		batch_size=config["batch_size"],
+		shuffle=False,
+		collate_fn=lambda x: collate_fn(x, train_set.word2idx)
 	)
 
+	# Prepare the model
 	print(f"Preparing model {model_name}...")
 	if model_name.startswith("resnet"):
 		model = ResnetLSTMCaption(
 			resnet_name=model_name,
 			output_dir=output_dir,
 			hidden_size=config["hidden_size"],
-			vocab_size=dataset.vocab_size,
+			vocab_size=train_set.vocab_size,
 			embedding_dim=config["embedding_dim"],
 			num_layers=config["num_layers"]
 		)
 		model.to(device)
 		train_model = train_resnetLSTMCaption
 
-	# Train the model
+	# Prepare the training configuration
 	print("Training model...")
 	optimizer_name = config["optimizer"]
 	optimizer = getattr(torch.optim, optimizer_name)(
@@ -70,10 +82,14 @@ def train(
 		)
 	else:
 		scheduler = None
-	criterion = torch.nn.CrossEntropyLoss(ignore_index=dataset.word2idx['<pad>'])
+	criterion = torch.nn.CrossEntropyLoss(ignore_index=train_set.word2idx['<pad>'])
+
+	# Train the model
 	train_model(
 		model=model,
-		dataloader=dataloader,
+		train_loader=train_loader,
+		val_loader=val_loader,
+		idx2word=train_set.idx2word,
 		optimizer=optimizer,
 		scheduler=scheduler,
 		criterion=criterion,

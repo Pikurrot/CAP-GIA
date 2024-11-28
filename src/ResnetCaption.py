@@ -3,6 +3,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from transformers import AutoModel
+import evaluate
 
 class ResnetLSTMCaption(nn.Module):
 	def __init__(
@@ -13,7 +14,7 @@ class ResnetLSTMCaption(nn.Module):
 			vocab_size: int,
 			embedding_dim: int,
 			num_layers: int
-		):
+	):
 		super(ResnetLSTMCaption, self).__init__()
 		self.model_name = "microsoft/" + resnet_name
 		self.output_dir = output_dir
@@ -40,7 +41,11 @@ class ResnetLSTMCaption(nn.Module):
 		self.feature_proj = nn.Linear(self.resnet_output_size, embedding_dim) # For image features
 		self.output_layer = nn.Linear(hidden_size, vocab_size) # For LSTM outputs
 	
-	def forward(self, images, captions=None):
+	def forward(
+			self,
+			images: torch.Tensor, # (bs, channels, h, w)
+			captions: torch.Tensor = None # (bs, seq_len)
+	):
 		with torch.no_grad():
 			features = self.resnet(images).last_hidden_state # (bs, channels, h, w)
 		batch_size = features.size(0)
@@ -92,7 +97,9 @@ class ResnetLSTMCaption(nn.Module):
 
 def train_resnetLSTMCaption(
 	model: ResnetLSTMCaption,
-	dataloader: DataLoader,
+	train_loader: DataLoader,
+	val_loader: DataLoader,
+	idx2word: dict,
 	optimizer: torch.optim.Optimizer,
 	scheduler: torch.optim.lr_scheduler._LRScheduler,
 	criterion: nn.Module,
@@ -100,10 +107,16 @@ def train_resnetLSTMCaption(
 	num_epochs: int,
 	log_wandb: bool = True,
 ):
-	model.train()
+	# Initialize evaluation metrics
+	bleu = evaluate.load('bleu')
+	meteor = evaluate.load('meteor')
+	rouge = evaluate.load('rouge')
+
 	for epoch in range(num_epochs):
+		# Train epoch
 		epoch_loss = 0
-		for images, captions in dataloader:
+		model.train()
+		for images, captions in train_loader:
 			images, captions = images.to(device), captions.to(device)
 
 			# Shift captions by one for input and target
@@ -111,11 +124,11 @@ def train_resnetLSTMCaption(
 			targets = captions[:, 1:]  # All tokens except the first
 
 			# Forward pass
-			outputs = model(images, captions=inputs)  # Outputs: [batch_size, caption_length, vocab_size]
+			outputs = model(images, captions=inputs) # (bs, caption_length, vocab_size)
 
 			# Compute loss
-			outputs = outputs.reshape(-1, outputs.size(-1))  # [batch_size * caption_length, vocab_size]
-			targets = targets.reshape(-1)  # [batch_size * caption_length]
+			outputs = outputs.reshape(-1, outputs.size(-1)) # (bs * caption_length, vocab_size)
+			targets = targets.reshape(-1) # (bs * caption_length)
 			loss = criterion(outputs, targets)
 
 			optimizer.zero_grad()
@@ -126,9 +139,57 @@ def train_resnetLSTMCaption(
 			if log_wandb:
 				wandb.log({"batch_loss": loss.item()})
 
+		# Validation epoch
+		model.eval()
+		val_loss = 0
+		predictions = [] # (bs,)
+		references = [] # (bs,)
+		with torch.no_grad():
+			for images, captions in val_loader:
+				images, captions = images.to(device), captions.to(device)
+
+				# Compute validation loss
+				inputs = captions[:, :-1]  # All tokens except the last
+				targets = captions[:, 1:]  # All tokens except the first
+				outputs = model(images, captions=inputs)  # (bs, caption_length, vocab_size)
+				outputs = outputs.reshape(-1, outputs.size(-1))  # (bs * caption_length, vocab_size)
+				targets = targets.reshape(-1)  # (bs * caption_length)
+				loss = criterion(outputs, targets)
+				val_loss += loss.item()
+
+				# Generate captions
+				pred_captions = model(images)
+				for i in range(pred_captions.size(0)):
+					tokens = [idx2word[idx.item()] for idx in pred_captions[i]]
+					final_caption = []
+					for token in tokens:
+						if token == "<end>":
+							break
+						final_caption.append(token)
+					final_caption = " ".join(final_caption)
+					predictions.append(final_caption)
+					reference_caption = " ".join([idx2word[idx.item()] for idx in captions[i]])
+					references.append([reference_caption])
+
 		if scheduler is not None:
 			scheduler.step()
-		avg_epoch_loss = epoch_loss / len(dataloader)
-		print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {avg_epoch_loss:.4f}')
+
+		# Compute evaluation metrics
+		res_bleu_1 = bleu.compute(predictions=predictions, references=[[ref] for ref in references], max_order=1)
+		res_bleu_2 = bleu.compute(predictions=predictions, references=[[ref] for ref in references], max_order=2)
+		res_meteor = meteor.compute(predictions=predictions, references=[[ref] for ref in references])
+		res_rouge = rouge.compute(predictions=predictions, references=[[ref] for ref in references])
+		avg_val_loss = val_loss / len(val_loader)
+		avg_epoch_loss = epoch_loss / len(train_loader)
+
+		# Log results
+		print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {avg_epoch_loss:.4f}, Val Loss: {avg_val_loss:.4f}')
 		if log_wandb:
-			wandb.log({"epoch_loss": avg_epoch_loss})
+			wandb.log({
+				"epoch_loss": avg_epoch_loss,
+				"val_loss": avg_val_loss,
+				"BLEU-1": res_bleu_1["bleu"],
+				"BLEU-2": res_bleu_2["bleu"],
+				"ROUGE-L": res_rouge["rougeL"],
+				"METEOR": res_meteor["meteor"]
+			})

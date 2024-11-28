@@ -2,10 +2,11 @@ import os
 import pandas as pd
 import numpy as np
 import torch
+import cv2
 from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
-import cv2
+from typing import Literal
 
 transform = transforms.Compose([
 	transforms.Resize((224, 224)),
@@ -18,14 +19,17 @@ def destransform(image: torch.Tensor):
 	image = image.permute(1, 2, 0).numpy()
 	image = image * np.array([0.229, 0.224, 0.225]) + np.array([0.485, 0.456, 0.406])
 	image = np.clip(image, 0, 1)
+	image = image[..., ::-1]
 	return image
 
 class FlickrDataset(Dataset):
 	def __init__(
 			self,
 			data_path: str,
-			transform_image: bool = True
-		):
+			transform_image: bool = True,
+			split: Literal["train", "val", "test"] = "train",
+			split_size: list = [0.7, 0.1, 0.2]
+	):
 		super(FlickrDataset, self).__init__()
 		self.img_path = os.path.join(data_path, 'Images')
 		self.cap_path = os.path.join(data_path, 'captions.txt')
@@ -42,6 +46,18 @@ class FlickrDataset(Dataset):
 		self.word2idx = {word: idx for idx, word in enumerate(self.vocab)}
 		self.idx2word = {idx: word for word, idx in self.word2idx.items()}
 		self.vocab_size = len(self.vocab)
+
+		# Split data
+		total_size = len(self.cap_data)
+		train_end = int(split_size[0] * total_size)
+		val_end = train_end + int(split_size[1] * total_size)
+
+		if split == "train":
+			self.cap_data = self.cap_data[:train_end]
+		elif split == "val":
+			self.cap_data = self.cap_data[train_end:val_end]
+		elif split == "test":
+			self.cap_data = self.cap_data[val_end:]
 
 	def __len__(self):
 		return len(self.cap_data)
