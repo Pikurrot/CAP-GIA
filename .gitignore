@@ -164,6 +164,7 @@ cython_debug/
 # Custom
 Baseline Model and Metrics.ipynb
 process2job.sh
+process2job.bat
 out/
 temp.ipynb
 wandb
