@@ -80,8 +80,8 @@ class ResnetLSTMCaption(nn.Module):
 
 		for _ in range(max_seq_len):
 			lstm_out, hidden = self.lstm(embeddings, hidden)  # (bs, 1, hidden_size)
-			outputs = self.linear(lstm_out.squeeze(1))  # (bs, vocab_size)
-			_, predicted = outputs.max(1)  # (bs,)
+			outputs = self.output_layer(lstm_out.squeeze(1))  # (bs, vocab_size)
+			_, predicted = outputs.max(1)  # (bs,) # this is greedy, try beam search
 			captions.append(predicted.unsqueeze(1))  # (bs, 1)
 			inputs = predicted.unsqueeze(1)
 			embeddings = self.embedding(inputs)  # (bs, 1, embedding_dim)

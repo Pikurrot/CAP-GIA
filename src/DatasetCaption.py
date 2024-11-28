@@ -36,8 +36,8 @@ class FlickrDataset(Dataset):
 		self.vocab = set()
 		for caption in self.cap_data['caption']:
 			self.vocab.update(caption.split())
-		extra_tokens = ['<start>', '<end>', '<pad>', '<unk>']
-		self.vocab.update(extra_tokens)
+		self.special_tokens = ['<start>', '<end>', '<pad>', '<unk>']
+		self.vocab.update(self.special_tokens)
 		self.vocab = sorted(self.vocab)
 		self.word2idx = {word: idx for idx, word in enumerate(self.vocab)}
 		self.idx2word = {idx: word for word, idx in self.word2idx.items()}
