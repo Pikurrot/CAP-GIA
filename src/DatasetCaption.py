@@ -84,7 +84,7 @@ class ReceipesDataset(Dataset):
 	def __init__(
 			self,
 			data_path: str,
-			transform_image: bool = True,
+			transform_image: bool = False,
 			split: Literal["train", "val", "test"] = "train",
 			split_size: list = [0.7, 0.1, 0.2]
 	):
@@ -98,17 +98,18 @@ class ReceipesDataset(Dataset):
 		# Clean data
 		self.cap_data = self.cap_data.dropna(subset=["Title"]) # TODO: Add other columns
 		self.cap_data = self.cap_data[self.cap_data["Title"].apply(lambda x: len(x.split()) > 0)]
+		self.cap_data = self.cap_data[self.cap_data["Image_Name"].apply(lambda x: x != "#NAME?")]
 
 		# Create vocabulary
-		self.vocab = set()
-		for caption in self.cap_data["Title"]: # TODO: Add other columns
-			self.vocab.update(caption.split())
-		self.special_tokens = ['<start>', '<end>', '<pad>', '<unk>']
-		self.vocab.update(self.special_tokens)
-		self.vocab = sorted(self.vocab)
-		self.word2idx = {word: idx for idx, word in enumerate(self.vocab)}
-		self.idx2word = {idx: word for word, idx in self.word2idx.items()}
-		self.vocab_size = len(self.vocab)
+		# self.vocab = set()
+		# for caption in self.cap_data["Title"]: # TODO: Add other columns
+		# 	self.vocab.update(caption.split())
+		# self.special_tokens = ['<start>', '<end>', '<pad>', '<unk>']
+		# self.vocab.update(self.special_tokens)
+		# self.vocab = sorted(self.vocab)
+		# self.word2idx = {word: idx for idx, word in enumerate(self.vocab)}
+		# self.idx2word = {idx: word for word, idx in self.word2idx.items()}
+		# self.vocab_size = len(self.vocab)
 
 		# Split data
 		total_size = len(self.cap_data)
@@ -121,9 +122,15 @@ class ReceipesDataset(Dataset):
 			self.cap_data = self.cap_data[train_end:val_end]
 		elif split == "test":
 			self.cap_data = self.cap_data[val_end:]
-		
+	
 	def __len__(self):
 		return len(self.cap_data)
+	
+	def verify_paths(self):
+		for idx in range(len(self)):
+			img_name = os.path.join(self.img_path, self.cap_data.iloc[idx, 4]) + ".jpg"
+			if not os.path.exists(img_name):
+				print(f"Image {img_name} does not exist.")
 	
 	def __getitem__(self, idx):
 		img_name = os.path.join(self.img_path, self.cap_data.iloc[idx, 4]) + ".jpg"
@@ -132,13 +139,11 @@ class ReceipesDataset(Dataset):
 		image = Image.fromarray(image)
 		if self.transform_image:
 			image = transform(image)
-		else:
-			image = transforms.ToTensor()(image)
 		caption = self.cap_data.iloc[idx, 1]
 		return image, caption
 
 
-def collate_fn(batch, word2idx):
+def collate_fn_tensor(batch, word2idx):
 	images, captions = zip(*batch)
 	images = torch.stack(images, dim=0)
 	captions = [
@@ -153,18 +158,25 @@ def collate_fn(batch, word2idx):
 	return images, captions
 
 
+def collate_fn_lst(batch):
+	# images come in PIL format
+	images, captions = zip(*batch)
+	return images, captions
+
+
 if __name__ == '__main__':
 	data_path = "/media/eric/D/datasets/receipes"
-	dataset = ReceipesDataset(data_path, transform_image=True, split="train")
+	dataset = ReceipesDataset(data_path, transform_image=False, split="train")
 	print(len(dataset))
-	image, caption = dataset[100]
-	print(caption)
-	image = image.permute(1, 2, 0).numpy()
-	cv2.imshow('image', image)
+	image, caption = dataset[100] # image is PIL without transform
+	cv2.imshow('image', np.array(image))
 	cv2.waitKey(0)
 	cv2.destroyAllWindows()
 
-	dataloader = DataLoader(dataset, batch_size=4, shuffle=True, collate_fn=lambda x: collate_fn(x, dataset.word2idx))
+	dataloader = DataLoader(dataset, batch_size=4, shuffle=True, collate_fn=collate_fn_lst)
 	for images, captions in dataloader:
-		print(images.size(), captions.size())
+		print(len(images), len(captions))
 		break
+	
+	dataset.verify_paths()
+	print("Done.")

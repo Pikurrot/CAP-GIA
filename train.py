@@ -6,7 +6,7 @@ import torch
 from dotenv import load_dotenv
 from torch.utils.data import DataLoader
 from src.DinoGpt import DinoGpt, train_DinoGpt
-from src.DatasetCaption import ReceipesDataset, collate_fn
+from src.DatasetCaption import ReceipesDataset
 from datetime import datetime
 
 log_wandb = True
@@ -37,14 +37,12 @@ def train(
 	train_loader = DataLoader(
 		train_set,
 		batch_size=config["batch_size"],
-		shuffle=True,
-		collate_fn=lambda x: collate_fn(x, train_set.word2idx)
+		shuffle=True
 	)
 	val_loader = DataLoader(
 		val_set,
 		batch_size=config["batch_size"],
-		shuffle=False,
-		collate_fn=lambda x: collate_fn(x, train_set.word2idx)
+		shuffle=False
 	)
 
 	# Prepare the model
@@ -75,17 +73,14 @@ def train(
 		)
 	else:
 		scheduler = None
-	criterion = torch.nn.CrossEntropyLoss(ignore_index=train_set.word2idx['<pad>'])
 
 	# Train the model
 	train_DinoGpt(
 		model=model,
 		train_loader=train_loader,
 		val_loader=val_loader,
-		idx2word=train_set.idx2word,
 		optimizer=optimizer,
 		scheduler=scheduler,
-		criterion=criterion,
 		device=device,
 		num_epochs=config["epochs"],
 		log_wandb=log_wandb

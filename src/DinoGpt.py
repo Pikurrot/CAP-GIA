@@ -43,7 +43,7 @@ class DinoGpt(nn.Module):
 	):
 		# Extract image features
 		with torch.no_grad():
-			inputs = self.dino_processor(images, return_tensors="pt") # TODO: try with do_resize=False
+			inputs = self.dino_processor(images, return_tensors="pt")
 			inputs = inputs.to(images.device)
 			image_features = self.dino(**inputs)[0][:, 0, :] # (bs, hidden_size)
 		
