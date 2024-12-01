@@ -80,7 +80,7 @@ class FlickrDataset(Dataset):
 		return image, caption
 
 
-class RecipesDataset(Dataset):
+class ReceipesDataset(Dataset):
 	def __init__(
 			self,
 			data_path: str,
@@ -88,7 +88,7 @@ class RecipesDataset(Dataset):
 			split: Literal["train", "val", "test"] = "train",
 			split_size: list = [0.7, 0.1, 0.2]
 	):
-		super(RecipesDataset, self).__init__()
+		super(ReceipesDataset, self).__init__()
 		self.img_path = os.path.join(data_path, 'FoodImages', 'Food Images')
 		self.cap_path = os.path.join(data_path, 'FoodIngredientsAndReceipesDatasetWithImageNameMapping.csv')
 		self.cap_data = pd.read_csv(self.cap_path)
@@ -154,8 +154,8 @@ def collate_fn(batch, word2idx):
 
 
 if __name__ == '__main__':
-	data_path = "/media/eric/D/datasets/recipes"
-	dataset = RecipesDataset(data_path, transform_image=True, split="train")
+	data_path = "/media/eric/D/datasets/receipes"
+	dataset = ReceipesDataset(data_path, transform_image=True, split="train")
 	print(len(dataset))
 	image, caption = dataset[100]
 	print(caption)
