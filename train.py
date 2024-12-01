@@ -5,39 +5,34 @@ import yaml
 import torch
 from dotenv import load_dotenv
 from torch.utils.data import DataLoader
-from src.ResnetCaption import ResnetLSTMCaption, train_resnetLSTMCaption
-from src.DatasetCaption import FlickrDataset, collate_fn
+from src.DinoGpt import DinoGpt, train_DinoGpt
+from src.DatasetCaption import ReceipesDataset, collate_fn
+from datetime import datetime
 
 log_wandb = True
 
 def train(
-		model_name: str,
-		dataset_name: str,
 		output_dir: str,
 		data_dir: str,
 		config: dict
 ):
 	# Initialize wandb
+	model_name = config["model"]
+	datetime_str = datetime.now().strftime("%d-%m_%H:%M:%S")
+	save_name = f"{model_name}_{datetime_str}"
 	if log_wandb:
 		wandb.init(
 			project="CAP-GIA",
-			name=f"{model_name}-{dataset_name}",
+			name=save_name,
 			config=config
 		)
 
 	# Prepare the dataset
-	print(f"Preparing dataset {dataset_name}...")
+	print("Preparing dataset...")
 	device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-	data_path = os.path.join(data_dir, dataset_name)
-	if dataset_name.startswith("flickr"):
-		train_set = FlickrDataset(
-			data_path=data_path,
-			split="train"
-		)
-		val_set = FlickrDataset(
-			data_path=data_path,
-			split="val"
-		)
+	data_path = os.path.join(data_dir, "receipes")
+	train_set = ReceipesDataset(data_path, split="train")
+	val_set = ReceipesDataset(data_path, split="val")
 	print(f"Vocabulary size: {train_set.vocab_size}")
 	train_loader = DataLoader(
 		train_set,
@@ -54,17 +49,15 @@ def train(
 
 	# Prepare the model
 	print(f"Preparing model {model_name}...")
-	if model_name.startswith("resnet"):
-		model = ResnetLSTMCaption(
-			resnet_name=model_name,
-			output_dir=output_dir,
-			hidden_size=config["hidden_size"],
-			vocab_size=train_set.vocab_size,
-			embedding_dim=config["embedding_dim"],
-			num_layers=config["num_layers"]
-		)
-		model.to(device)
-		train_model = train_resnetLSTMCaption
+	model = DinoGpt(
+		resnet_name=model_name,
+		output_dir=output_dir,
+		hidden_size=config["hidden_size"],
+		vocab_size=train_set.vocab_size,
+		embedding_dim=config["embedding_dim"],
+		num_layers=config["num_layers"]
+	)
+	model.to(device)
 
 	# Prepare the training configuration
 	print("Training model...")
@@ -85,7 +78,7 @@ def train(
 	criterion = torch.nn.CrossEntropyLoss(ignore_index=train_set.word2idx['<pad>'])
 
 	# Train the model
-	train_model(
+	train_DinoGpt(
 		model=model,
 		train_loader=train_loader,
 		val_loader=val_loader,
@@ -102,11 +95,7 @@ def train(
 	print("Saving model...")
 	if not os.path.exists(output_dir):
 		os.makedirs(output_dir)
-	save_path = os.path.join(output_dir, f"{model_name}-{dataset_name}.pt")
-	i = 0
-	while os.path.exists(save_path):
-		save_path = os.path.join(output_dir, f"{model_name}-{dataset_name}-{i}.pt")
-		i += 1
+	save_path = os.path.join(output_dir, f"{save_name}.pt")
 	torch.save(model.state_dict(), save_path)
 	if log_wandb:
 		wandb.save(save_path)
@@ -120,30 +109,20 @@ def train(
 if __name__ == '__main__':
 	# Parse arguments
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--model', type=str, default='resnet-18')
-	parser.add_argument('--dataset', type=str, default='flickr-8k')
 	parser.add_argument('--out_dir', type=str, default='out')
 	parser.add_argument("--data_dir", type=str, default="")
 	args = parser.parse_args()
 	print(args)
-	
-	assert args.model in ["resnet-18", "resnet-34", "resnet-50"]
-	assert args.dataset in ["flickr-8k", "flickr-30k"]
 
 	# Load config
 	load_dotenv()
 	wandb_key = os.getenv("WANDB_KEY")
 	with open("config/train.yml", "r") as f:
 		config = yaml.load(f, Loader=yaml.FullLoader)
-	assert args.model in config, f"Model {args.model} not found in config"
-	assert args.dataset in config[args.model], f"Dataset {args.dataset} not found in config[{args.model}]"
-	model_dataset_config = config[args.model][args.dataset]
 
 	# Train model on dataset
 	train(
-		model_name=args.model,
-		dataset_name=args.dataset,
 		output_dir=args.out_dir,
 		data_dir=args.data_dir,
-		config=model_dataset_config
+		config=config
 	)
