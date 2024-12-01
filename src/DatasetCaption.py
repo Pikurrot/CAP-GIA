@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import torch
 import cv2
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
 from typing import Literal
@@ -35,6 +35,7 @@ class FlickrDataset(Dataset):
 		self.cap_path = os.path.join(data_path, 'captions.txt')
 		self.cap_data = pd.read_csv(self.cap_path)
 		self.transform_image = transform_image
+		self.split = split
 
 		# Create vocabulary
 		self.vocab = set()
@@ -48,6 +49,7 @@ class FlickrDataset(Dataset):
 		self.vocab_size = len(self.vocab)
 
 		# Split data
+		self.cap_data = self.cap_data.groupby("image").agg({"caption": list}).sort_index().reset_index()
 		total_size = len(self.cap_data)
 		train_end = int(split_size[0] * total_size)
 		val_end = train_end + int(split_size[1] * total_size)
@@ -59,6 +61,9 @@ class FlickrDataset(Dataset):
 		elif split == "test":
 			self.cap_data = self.cap_data[val_end:]
 
+		if split == "train": # Undo grouping
+			self.cap_data = self.cap_data.explode("caption").reset_index(drop=True)
+
 	def __len__(self):
 		return len(self.cap_data)
 	
@@ -69,6 +74,8 @@ class FlickrDataset(Dataset):
 		image = Image.fromarray(image)
 		if self.transform_image:
 			image = transform(image)
+		else:
+			image = transforms.ToTensor()(image)
 		caption = self.cap_data.iloc[idx, 1]
 		return image, caption
 
@@ -81,7 +88,7 @@ def collate_fn(batch, word2idx):
 			[word2idx['<start>']] + 
 			[word2idx.get(word, word2idx['<unk>']) for word in caption.split()] + 
 			[word2idx['<end>']]
-		) 
+		)
 		for caption in captions
 	]
 	captions = torch.nn.utils.rnn.pad_sequence(captions, batch_first=True, padding_value=word2idx['<pad>'])
@@ -90,7 +97,7 @@ def collate_fn(batch, word2idx):
 
 if __name__ == '__main__':
 	data_path = "/media/eric/D/datasets/flickr-8k"
-	dataset = FlickrDataset(data_path)
+	dataset = FlickrDataset(data_path, transform_image=True, split="val")
 	print(len(dataset))
 	image, caption = dataset[100]
 	print(caption)
@@ -98,3 +105,8 @@ if __name__ == '__main__':
 	cv2.imshow('image', image)
 	cv2.waitKey(0)
 	cv2.destroyAllWindows()
+
+	dataloader = DataLoader(dataset, batch_size=4, shuffle=True, collate_fn=lambda x: collate_fn(x, dataset.word2idx))
+	for images, captions in dataloader:
+		print(images.size(), captions.size())
+		break
