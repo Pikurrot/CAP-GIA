@@ -6,7 +6,7 @@ import torch
 from dotenv import load_dotenv
 from torch.utils.data import DataLoader
 from src.DinoGpt import DinoGpt, train_DinoGpt
-from src.DatasetCaption import ReceipesDataset
+from src.DatasetCaption import ReceipesDataset, collate_fn_lst
 from datetime import datetime
 
 log_wandb = True
@@ -26,34 +26,31 @@ def train(
 			name=save_name,
 			config=config
 		)
+	device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+	print(f"Device: {device}")
 
 	# Prepare the dataset
 	print("Preparing dataset...")
-	device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 	data_path = os.path.join(data_dir, "receipes")
 	train_set = ReceipesDataset(data_path, split="train")
 	val_set = ReceipesDataset(data_path, split="val")
-	print(f"Vocabulary size: {train_set.vocab_size}")
 	train_loader = DataLoader(
 		train_set,
 		batch_size=config["batch_size"],
-		shuffle=True
+		shuffle=True,
+		collate_fn=collate_fn_lst
 	)
 	val_loader = DataLoader(
 		val_set,
 		batch_size=config["batch_size"],
-		shuffle=False
+		shuffle=False,
+		collate_fn=collate_fn_lst
 	)
 
 	# Prepare the model
 	print(f"Preparing model {model_name}...")
 	model = DinoGpt(
-		resnet_name=model_name,
-		output_dir=output_dir,
-		hidden_size=config["hidden_size"],
-		vocab_size=train_set.vocab_size,
-		embedding_dim=config["embedding_dim"],
-		num_layers=config["num_layers"]
+		output_dir=output_dir
 	)
 	model.to(device)
 

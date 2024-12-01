@@ -8,22 +8,19 @@ import evaluate
 class DinoGpt(nn.Module):
 	def __init__(
 			self,
-			output_dir: str,
-			hidden_size: int,
-			vocab_size: int,
+			output_dir: str
 	):
 		super(DinoGpt, self).__init__()
 		self.output_dir = output_dir
-		self.hidden_size = hidden_size
-		self.vocab_size = vocab_size
 
 		# Load pre-trained DINO model
-		self.dino_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-small")
-		self.dino = AutoModel.from_pretrained("facebook/dinov2-small")
+		self.dino_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-small", cache_dir=self.output_dir)
+		self.dino = AutoModel.from_pretrained("facebook/dinov2-small", cache_dir=self.output_dir)
 
 		# Load pre-trained GPT-2 model
-		self.gpt_tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-		self.gpt = GPT2LMHeadModel.from_pretrained("gpt2")
+		self.gpt_tokenizer = GPT2Tokenizer.from_pretrained("gpt2", cache_dir=self.output_dir)
+		self.gpt_tokenizer.pad_token = self.gpt_tokenizer.eos_token
+		self.gpt = GPT2LMHeadModel.from_pretrained("gpt2", cache_dir=self.output_dir)
 
 		# Freeze DINO parameters
 		for param in self.dino.parameters():
@@ -44,7 +41,7 @@ class DinoGpt(nn.Module):
 		# Extract image features
 		with torch.no_grad():
 			inputs = self.dino_processor(images, return_tensors="pt")
-			inputs = inputs.to(images.device)
+			inputs = inputs.to(self.dino.device)
 			image_features = self.dino(**inputs)[0][:, 0, :] # (bs, hidden_size)
 		
 		# Project image features to GPT-2 embedding size
@@ -57,7 +54,7 @@ class DinoGpt(nn.Module):
 				return_tensors="pt",
 				padding=True,
 				truncation=True
-			).input_ids.to(images.device) # (bs, seq_len)
+			).input_ids.to(self.dino.device) # (bs, seq_len)
 			inputs_embeds = self.gpt.transformer.wte(input_ids) # (bs, seq_len, n_embd)
 			inputs_embeds = torch.cat((image_embeddings, inputs_embeds[:, :-1, :]), dim=1) # (bs, seq_len+1, n_embd)
 			outputs = self.gpt(inputs_embeds=inputs_embeds, labels=input_ids)
@@ -67,7 +64,7 @@ class DinoGpt(nn.Module):
 			generated_ids = self.gpt.generate(
 				input_ids=image_embeddings,
 				max_length=max_seq_len,
-				pad_token_id=self.gpt_tokenizer.pad_token_id
+				pad_token_id=self.gpt_tokenizer.eos_token_id
 			)
 			captions = self.gpt_tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
 			return captions
@@ -92,9 +89,7 @@ def train_DinoGpt(
 		# Training Phase
 		model.train()
 		train_loss = 0
-		for images, captions in train_loader:
-			images = images.to(device)
-			
+		for images, captions in train_loader:		
 			# Forward pass
 			loss = model(images, captions)
 			train_loss += loss.item()
@@ -105,15 +100,14 @@ def train_DinoGpt(
 			
 			if log_wandb:
 				wandb.log({"train_batch_loss": loss.item()})
+			print(f"Batch Loss: {loss.item():.4f}")
 		
 		# Validation Phase
 		model.eval()
 		val_loss = 0
 		predictions, references = [], []
 		with torch.no_grad():
-			for images, captions in val_loader:
-				images = images.to(device)
-				
+			for images, captions in val_loader:			
 				# Compute loss
 				loss = model(images, captions)
 				val_loss += loss.item()
