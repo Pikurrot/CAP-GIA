@@ -80,6 +80,64 @@ class FlickrDataset(Dataset):
 		return image, caption
 
 
+class RecipesDataset(Dataset):
+	def __init__(
+			self,
+			data_path: str,
+			transform_image: bool = True,
+			split: Literal["train", "val", "test"] = "train",
+			split_size: list = [0.7, 0.1, 0.2]
+	):
+		super(RecipesDataset, self).__init__()
+		self.img_path = os.path.join(data_path, 'FoodImages', 'Food Images')
+		self.cap_path = os.path.join(data_path, 'FoodIngredientsAndReceipesDatasetWithImageNameMapping.csv')
+		self.cap_data = pd.read_csv(self.cap_path)
+		self.transform_image = transform_image
+		self.split = split
+
+		# Clean data
+		self.cap_data = self.cap_data.dropna(subset=["Title"]) # TODO: Add other columns
+		self.cap_data = self.cap_data[self.cap_data["Title"].apply(lambda x: len(x.split()) > 0)]
+
+		# Create vocabulary
+		self.vocab = set()
+		for caption in self.cap_data["Title"]: # TODO: Add other columns
+			self.vocab.update(caption.split())
+		self.special_tokens = ['<start>', '<end>', '<pad>', '<unk>']
+		self.vocab.update(self.special_tokens)
+		self.vocab = sorted(self.vocab)
+		self.word2idx = {word: idx for idx, word in enumerate(self.vocab)}
+		self.idx2word = {idx: word for word, idx in self.word2idx.items()}
+		self.vocab_size = len(self.vocab)
+
+		# Split data
+		total_size = len(self.cap_data)
+		train_end = int(split_size[0] * total_size)
+		val_end = train_end + int(split_size[1] * total_size)
+
+		if split == "train":
+			self.cap_data = self.cap_data[:train_end]
+		elif split == "val":
+			self.cap_data = self.cap_data[train_end:val_end]
+		elif split == "test":
+			self.cap_data = self.cap_data[val_end:]
+		
+	def __len__(self):
+		return len(self.cap_data)
+	
+	def __getitem__(self, idx):
+		img_name = os.path.join(self.img_path, self.cap_data.iloc[idx, 4]) + ".jpg"
+		image = Image.open(img_name).convert('RGB')
+		image = np.array(image)[..., ::-1]
+		image = Image.fromarray(image)
+		if self.transform_image:
+			image = transform(image)
+		else:
+			image = transforms.ToTensor()(image)
+		caption = self.cap_data.iloc[idx, 1]
+		return image, caption
+
+
 def collate_fn(batch, word2idx):
 	images, captions = zip(*batch)
 	images = torch.stack(images, dim=0)
@@ -96,8 +154,8 @@ def collate_fn(batch, word2idx):
 
 
 if __name__ == '__main__':
-	data_path = "/media/eric/D/datasets/flickr-8k"
-	dataset = FlickrDataset(data_path, transform_image=True, split="val")
+	data_path = "/media/eric/D/datasets/recipes"
+	dataset = RecipesDataset(data_path, transform_image=True, split="train")
 	print(len(dataset))
 	image, caption = dataset[100]
 	print(caption)
