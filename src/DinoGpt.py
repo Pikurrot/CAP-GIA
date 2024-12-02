@@ -1,5 +1,6 @@
 import wandb
 import torch
+import numpy as np
 from torch import nn
 from torch.utils.data import DataLoader
 from transformers import AutoModel, AutoImageProcessor, GPT2LMHeadModel, GPT2Tokenizer
@@ -25,8 +26,8 @@ class DinoGpt(nn.Module):
 		self.gpt.resize_token_embeddings(len(self.gpt_tokenizer))
 
 		# Freeze DINO parameters
-		for param in self.dino.parameters():
-			param.requires_grad = False
+		# for param in self.dino.parameters():
+		# 	param.requires_grad = False
 
 		# Linear projection layer
 		self.proj = nn.Linear(
@@ -131,6 +132,13 @@ def train_DinoGpt(
 		# Scheduler Step
 		if scheduler:
 			scheduler.step()
+
+		# Print some random examples
+		print()
+		for i in np.random.randint(0, len(predictions), 5):
+			print(f"Prediction: {predictions[i]}")
+			print(f"Reference: {references[i]}")
+			print()
 		
 		# Compute Metrics
 		res_bleu_1 = bleu.compute(predictions=predictions, references=[[ref] for ref in references], max_order=1)

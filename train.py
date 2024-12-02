@@ -84,10 +84,10 @@ def train(
 	)
 
 	# Save the model
-	print("Saving model...")
 	if not os.path.exists(output_dir):
 		os.makedirs(output_dir)
 	save_path = os.path.join(output_dir, f"{save_name}.pt")
+	print(f"Saving model to {save_path}")
 	torch.save(model.state_dict(), save_path)
 	if log_wandb:
 		wandb.save(save_path)
