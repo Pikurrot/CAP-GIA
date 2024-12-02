@@ -55,15 +55,20 @@ class DinoGpt(nn.Module):
 				padding=True,
 				truncation=True
 			).input_ids.to(self.dino.device) # (bs, seq_len)
+			attention_mask = (input_ids != self.gpt_tokenizer.pad_token_id).long().to(self.dino.device)
 			inputs_embeds = self.gpt.transformer.wte(input_ids) # (bs, seq_len, n_embd)
 			inputs_embeds = torch.cat((image_embeddings, inputs_embeds[:, :-1, :]), dim=1) # (bs, seq_len+1, n_embd)
-			outputs = self.gpt(inputs_embeds=inputs_embeds, labels=input_ids)
+			outputs = self.gpt(
+				inputs_embeds=inputs_embeds,
+				labels=input_ids,
+				attention_mask=attention_mask
+			)
 			return outputs.loss
 		else:
 			# Inference
 			generated_ids = self.gpt.generate(
 				input_ids=image_embeddings,
-				max_length=max_seq_len,
+				max_new_tokens=max_seq_len,
 				pad_token_id=self.gpt_tokenizer.eos_token_id
 			)
 			captions = self.gpt_tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
