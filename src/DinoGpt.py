@@ -19,8 +19,10 @@ class DinoGpt(nn.Module):
 
 		# Load pre-trained GPT-2 model
 		self.gpt_tokenizer = GPT2Tokenizer.from_pretrained("gpt2", cache_dir=self.output_dir)
-		self.gpt_tokenizer.pad_token = self.gpt_tokenizer.eos_token
+		if self.gpt_tokenizer.pad_token is None:
+			self.gpt_tokenizer.add_special_tokens({"pad_token": "[PAD]"})
 		self.gpt = GPT2LMHeadModel.from_pretrained("gpt2", cache_dir=self.output_dir)
+		self.gpt.resize_token_embeddings(len(self.gpt_tokenizer))
 
 		# Freeze DINO parameters
 		for param in self.dino.parameters():
@@ -43,7 +45,7 @@ class DinoGpt(nn.Module):
 			inputs = self.dino_processor(images, return_tensors="pt")
 			inputs = inputs.to(self.dino.device)
 			image_features = self.dino(**inputs)[0][:, 0, :] # (bs, hidden_size)
-		
+
 		# Project image features to GPT-2 embedding size
 		image_embeddings = self.proj(image_features).unsqueeze(1) # (bs, 1, n_embd)
 
@@ -66,10 +68,14 @@ class DinoGpt(nn.Module):
 			return outputs.loss
 		else:
 			# Inference
+			batch_size = image_embeddings.size(0)
+			attention_mask = torch.ones((batch_size, 1), dtype=torch.long, device=image_embeddings.device)  # (bs, 1)
 			generated_ids = self.gpt.generate(
-				input_ids=image_embeddings,
+				inputs_embeds=image_embeddings,
+				attention_mask=attention_mask,
 				max_new_tokens=max_seq_len,
-				pad_token_id=self.gpt_tokenizer.eos_token_id
+				pad_token_id=self.gpt_tokenizer.pad_token_id,
+				eos_token_id=self.gpt_tokenizer.eos_token_id
 			)
 			captions = self.gpt_tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
 			return captions
