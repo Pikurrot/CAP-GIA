@@ -59,7 +59,7 @@ class DinoGpt(nn.Module):
 			# Training with teacher forcing
 
 			# Preprocess captions
-			captions = [f"<start> {caption.replace('-',' ').lower().strip()} <end>" for caption in captions]
+			captions = [f"<start> {caption.lower().strip()} <end>" for caption in captions]
 
 			# Tokenize captions
 			encoding = self.gpt_tokenizer(
