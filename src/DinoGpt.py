@@ -26,11 +26,11 @@ class DinoGpt(nn.Module):
 		self.gpt.resize_token_embeddings(len(self.gpt_tokenizer))
 
 		# Freeze DINO parameters
-		for param in self.dino.parameters():
-			param.requires_grad = False
-		for layer in self.dino.encoder.layer[-2:]:
-			for param in layer.parameters():
-				param.requires_grad = True
+		# for param in self.dino.parameters():
+		# 	param.requires_grad = False
+		# for layer in self.dino.encoder.layer[-2:]:
+		# 	for param in layer.parameters():
+		# 		param.requires_grad = True
 
 		# Linear projection layer
 		self.proj = nn.Sequential(
