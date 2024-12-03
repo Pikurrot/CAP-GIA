@@ -128,7 +128,7 @@ class DinoGpt(nn.Module):
 			generated_ids = generated_ids[:, 2:]  # (bs, generated_seq_len)
 
 			# Decode the generated tokens
-			captions = self.gpt_tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
+			captions = self.gpt_tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
 
 			return captions
 
