@@ -48,7 +48,7 @@ class DinoGpt(nn.Module):
 	):
 		# Extract image features
 		with torch.no_grad():
-			inputs = self.dino_processor(images, return_tensors="pt")
+			inputs = self.dino_processor(images, return_tensors="pt", padding=True, truncation=True)
 			inputs = inputs.to(self.dino.device)
 			image_features = self.dino(**inputs)[0][:, 0, :] # (bs, hidden_size)
 
@@ -159,7 +159,7 @@ def train_DinoGpt(
 			
 			optimizer.zero_grad()
 			loss.backward()
-			torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+			torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
 			optimizer.step()
 			
 			if log_wandb:
