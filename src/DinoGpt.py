@@ -20,8 +20,9 @@ class DinoGpt(nn.Module):
 
 		# Load pre-trained GPT-2 model
 		self.gpt_tokenizer = GPT2Tokenizer.from_pretrained("gpt2", cache_dir=self.output_dir)
-		special_tokens_dict = {'bos_token': '<start>', 'eos_token': '<end>', 'pad_token': '[PAD]'}
-		self.gpt_tokenizer.add_special_tokens(special_tokens_dict)
+		self.gpt_tokenizer.bos_token = "<start>"
+		self.gpt_tokenizer.eos_token = "<end>"
+		self.gpt_tokenizer.pad_token = "[PAD]"
 		self.gpt = GPT2LMHeadModel.from_pretrained("gpt2", cache_dir=self.output_dir)
 		self.gpt.resize_token_embeddings(len(self.gpt_tokenizer))
 
@@ -58,7 +59,7 @@ class DinoGpt(nn.Module):
 			# Training with teacher forcing
 
 			# Preprocess captions
-			captions = [f"<start> {caption.lower().strip()} <end>" for caption in captions]
+			captions = [f"<start> {caption.replace("-"," ").lower().strip()} <end>" for caption in captions]
 
 			# Tokenize captions
 			encoding = self.gpt_tokenizer(
@@ -117,15 +118,17 @@ class DinoGpt(nn.Module):
 				inputs_embeds=inputs_embeds,
 				attention_mask=attention_mask,
 				max_new_tokens=max_seq_len,
+				num_beams=5,
+    			early_stopping=True,
 				pad_token_id=self.gpt_tokenizer.pad_token_id,
 				eos_token_id=self.gpt_tokenizer.eos_token_id
 			)
 
 			# Remove image and <start> token ids
-			# generated_ids = generated_ids[:, 2:]  # (bs, generated_seq_len)
+			generated_ids = generated_ids[:, 2:]  # (bs, generated_seq_len)
 
 			# Decode the generated tokens
-			captions = self.gpt_tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+			captions = self.gpt_tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
 
 			return captions
 
@@ -156,6 +159,7 @@ def train_DinoGpt(
 			
 			optimizer.zero_grad()
 			loss.backward()
+			torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 			optimizer.step()
 			
 			if log_wandb:
