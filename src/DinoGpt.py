@@ -122,7 +122,7 @@ class DinoGpt(nn.Module):
 			)
 
 			# Remove image and <start> token ids
-			generated_ids = generated_ids[:, 2:]  # (bs, generated_seq_len)
+			# generated_ids = generated_ids[:, 2:]  # (bs, generated_seq_len)
 
 			# Decode the generated tokens
 			captions = self.gpt_tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
