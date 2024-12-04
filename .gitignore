@@ -168,3 +168,4 @@ process2job.bat
 out/
 temp.ipynb
 wandb
+data
