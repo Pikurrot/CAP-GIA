@@ -58,8 +58,9 @@ def train(
 	print("Training model...")
 	optimizer_name = config["optimizer"]
 	optimizer = getattr(torch.optim, optimizer_name)(
-		model.parameters(),
-		lr=config["lr"]
+		[{"params": model.dino.parameters(), "lr": 1e-5},
+		{"params": model.proj.parameters(), "lr": 1e-4},
+		{"params": model.gpt.parameters(), "lr": 1e-5},]
 	)
 	scheduler_conf = config["scheduler"]
 	if scheduler_conf is not None:
