@@ -77,7 +77,7 @@ class ViTGpt(nn.Module):
 			B = pixel_values.shape[0]
 			
 			# Start each sequence with BOS token
-			bos_token_id = self.tokenizer.bos_token_id if self.tokenizer.bos_token_id is not None else self.tokenizer.eos_token_id
+			bos_token_id = self.decoder_tokenizer.bos_token_id if self.decoder_tokenizer.bos_token_id is not None else self.decoder_tokenizer.eos_token_id
 			bos_tokens = torch.full((B, 1), bos_token_id, device=self.device)  # [B, 1]
 			generated = bos_tokens
 			done = torch.zeros(B, dtype=torch.bool, device=self.device)
@@ -85,14 +85,14 @@ class ViTGpt(nn.Module):
 			# Iterative generation
 			for _ in range(max_length):
 				# Embed current tokens
-				input_embeds = self.gpt.transformer.wte(generated)  # [B, seq_len, n_embd]
+				input_embeds = self.decoder.transformer.wte(generated)  # [B, seq_len, n_embd]
 
 				# Combine with image_embeds prefix
 				# image_embeds: [B, n_embd] -> [B, 1, n_embd]
 				combined_embeds = torch.cat([image_embeds.unsqueeze(1), input_embeds], dim=1)  # [B, 1+seq_len, n_embd]
 
 				# GPT forward
-				outputs = self.gpt(inputs_embeds=combined_embeds)
+				outputs = self.decoder(inputs_embeds=combined_embeds)
 				# Get logits for the last token
 				logits = outputs.logits[:, -1, :]  # [B, vocab_size]
 
@@ -104,7 +104,7 @@ class ViTGpt(nn.Module):
 				generated = torch.cat([generated, next_token], dim=1)  # [B, seq_len+1]
 
 				# Update done mask for sequences that hit EOS
-				eos_mask = (next_token.squeeze(-1) == self.tokenizer.eos_token_id)
+				eos_mask = (next_token.squeeze(-1) == self.decoder_tokenizer.eos_token_id)
 				done = done | eos_mask
 				if done.all():
 					break
@@ -116,7 +116,7 @@ class ViTGpt(nn.Module):
 				if seq[0].item() == bos_token_id:
 					seq = seq[1:]
 				# Decode
-				text = self.tokenizer.decode(seq, skip_special_tokens=True)
+				text = self.decoder_tokenizer.decode(seq, skip_special_tokens=True)
 				generated_texts.append(text.strip())
 			
 			return generated_texts
