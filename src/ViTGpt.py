@@ -88,6 +88,8 @@ class ViTGpt(nn.Module):
 				input_embeds = self.decoder.transformer.wte(generated) # [B, seq_len, n_embd]
 
 				# Combine with image_embeds prefix
+				print("image_embeds shape:", image_embeds.shape)        # Should be [B, n_embd]
+				print("input_embeds shape:", input_embeds.shape)        # Should be [B, seq_len, n_embd]
 				combined_embeds = torch.cat([image_embeds.unsqueeze(1), input_embeds], dim=1) # [B, 1+seq_len, n_embd]
 
 				# GPT forward
@@ -129,6 +131,28 @@ def train_ViTGpt(
 	bleu = evaluate.load("bleu")
 	meteor = evaluate.load("meteor")
 	rouge = evaluate.load("rouge")
+
+	# Validation Phase
+	model.eval()
+	val_loss = 0
+	predictions, references = [], []
+	with torch.no_grad():
+		for images, captions in val_loader:			
+			# Compute loss
+			loss = model(images, captions)
+			val_loss += loss.item()
+			
+			# Generate captions
+			pred_captions = model(images, captions=None)
+			predictions.extend(pred_captions)
+			references.extend(captions)
+
+	# Print some random examples
+	print()
+	for i in np.random.randint(0, len(predictions), 5):
+		print(f"Prediction: {predictions[i]}")
+		print(f"Reference: {references[i]}")
+		print()
 
 	for epoch in range(num_epochs):
 		# Training Phase
