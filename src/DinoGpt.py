@@ -11,125 +11,100 @@ class DinoGpt(nn.Module):
 			self,
 			output_dir: str
 	):
-		super(DinoGpt, self).__init__()
-		self.output_dir = output_dir
-
+		super().__init__()
+		
 		# Load pre-trained DINO model
-		self.encoder_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-small", cache_dir=self.output_dir)
-		self.encoder = AutoModel.from_pretrained("facebook/dinov2-small", cache_dir=self.output_dir)
+		self.encoder_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-small", cache_dir=output_dir)
+		self.encoder = AutoModel.from_pretrained("facebook/dinov2-small", cache_dir=output_dir)
+		self.encoder.eval()  # Usually keep it frozen
+		for param in self.encoder.parameters():
+			param.requires_grad = False
 
-		# Load pre-trained GPT-2 model
-		self.decoder_tokenizer = GPT2Tokenizer.from_pretrained("gpt2", cache_dir=self.output_dir)
-		self.decoder_tokenizer.bos_token = "<start>"
-		self.decoder_tokenizer.eos_token = "<end>"
-		self.decoder_tokenizer.pad_token = "[PAD]"
-		self.decoder = GPT2LMHeadModel.from_pretrained("gpt2", cache_dir=self.output_dir)
-		self.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
+		# Load GPT-2 model
+		self.decoder = GPT2LMHeadModel.from_pretrained("gpt2", cache_dir=output_dir)
+		self.decoder_tokenizer = GPT2Tokenizer.from_pretrained("gpt2", cache_dir=output_dir)
+		if self.decoder_tokenizer.pad_token is None:
+			self.decoder_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+			self.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
 
-		# Freeze DINO parameters
-		# for param in self.encoder.parameters():
-		# 	param.requires_grad = False
-		# for layer in self.encoder.encoder.layer[-2:]:
-		# 	for param in layer.parameters():
-		# 		param.requires_grad = True
+		# Project image embedding to GPT-2 embedding dimension
+		self.proj = nn.Linear(self.encoder.config.hidden_size, self.decoder.config.n_embd)
 
-		# Linear projection layer
-		self.proj = nn.Sequential(
-			nn.Linear(self.encoder.config.hidden_size, self.decoder.config.n_embd),
-			nn.ReLU(),
-			nn.Linear(self.decoder.config.n_embd, self.decoder.config.n_embd)
-		)
+	def forward(self, images, captions=None, max_length=30):
+		device = next(self.parameters()).device
 
-	def forward(
-			self,
-			images: torch.Tensor, # (bs, channels, h, w)
-			captions: torch.Tensor = None, # (bs, seq_len)
-			max_seq_len: int = 20
-	):
-		# Extract image features
-		inputs = self.encoder_processor(images, return_tensors="pt", padding=True, truncation=True)
-		inputs = inputs.to(self.encoder.device)
-		image_features = self.encoder(**inputs)[0][:, 0, :] # (bs, hidden_size)
-
-		# Project image features to decoder embedding size
-		image_embeddings = self.proj(image_features).unsqueeze(1) # (bs, 1, n_embd)
+		# 1. Encode images with DINO
+		with torch.no_grad():
+			pixel_values = self.encoder_processor(images, return_tensors="pt").pixel_values.to(device)
+			dino_outputs = self.encoder(pixel_values=pixel_values)
+			# Take the CLS token embedding
+			image_embeds = dino_outputs.last_hidden_state[:, 0, :]  # [B, hidden_size]
+		# Project to GPT embedding size
+		image_embeds = self.proj(image_embeds)  # [B, n_embd]
 
 		if captions is not None:
-			# Training with teacher forcing
-
-			# Preprocess captions
-			captions = [f"<start> {caption.lower().strip()} <end>" for caption in captions]
-
+			# Training/Validation Mode
 			# Tokenize captions
-			encoding = self.decoder_tokenizer(
-				captions,
-				return_tensors="pt",
-				padding=True,
-				truncation=True,
-				add_special_tokens=True
-			)
-			input_ids = encoding.input_ids.to(self.encoder.device)  # (bs, seq_len)
-			attention_mask = encoding.attention_mask.to(self.encoder.device)  # (bs, seq_len)
+			encodings = self.decoder_tokenizer(captions, return_tensors='pt', padding=True, truncation=True)
+			input_ids = encodings.input_ids.to(device)    # [B, L]
+			attention_mask = encodings.attention_mask.to(device)
 
-			# Get input embeddings
-			inputs_embeds = self.decoder.transformer.wte(input_ids)  # (bs, seq_len, n_embd)
+			# Create input_embeds by concatenating image_embeds as a prefix
+			input_embeds = self.decoder.transformer.wte(input_ids)  # [B, L, n_embd]
+			image_embeds = image_embeds.unsqueeze(1)            # [B, 1, n_embd]
+			inputs_embeds = torch.cat([image_embeds, input_embeds], dim=1)  # [B, 1+L, n_embd]
 
-			# Concatenate image embeddings with inputs
-			inputs_embeds = torch.cat((image_embeddings, inputs_embeds[:, :-1, :]), dim=1)  # Shape: (bs, seq_len + 1, n_embd)
+			# Adjust labels to match outputs
+			labels = input_ids.clone()
+			labels = torch.cat([torch.full((labels.size(0), 1), -100, device=device), labels], dim=1)
 
-			# Update attention mask
-			attention_mask = torch.cat(
-				(torch.ones((attention_mask.size(0), 1), device=attention_mask.device, dtype=attention_mask.dtype),
-				attention_mask[:, :-1]),
-				dim=1
-			)  # (bs, seq_len + 1)
-
-			# Labels
-			labels = input_ids
-
-			# Compute loss
-			outputs = self.decoder(
-				inputs_embeds=inputs_embeds,
-				attention_mask=attention_mask,
-				labels=labels
-			)
+			# Pass through GPT2
+			outputs = self.decoder(inputs_embeds=inputs_embeds, attention_mask=torch.cat([torch.ones_like(attention_mask[:, :1]), attention_mask], dim=1), labels=labels)
 			loss = outputs.loss
 			return loss
+
 		else:
-			# Inference
-			batch_size = image_embeddings.size(0)
+			# Inference Mode
+			B = image_embeds.shape[0]
 
-			# Get <start> token embedding
-			start_token_id = self.decoder_tokenizer.bos_token_id
-			start_token_embedding = self.decoder.transformer.wte(
-				torch.tensor([start_token_id], device=image_embeddings.device)
-			).unsqueeze(0)  # (1, 1, n_embd)
-			start_token_embeddings = start_token_embedding.repeat(batch_size, 1, 1)  # (bs, 1, n_embd)
+			# Start each sequence with BOS token
+			bos_token_id = self.decoder_tokenizer.bos_token_id if self.decoder_tokenizer.bos_token_id is not None else self.decoder_tokenizer.eos_token_id
+			bos_tokens = torch.full((B, 1), bos_token_id, device=device)  # [B, 1]
+			generated = bos_tokens
+			done = torch.zeros(B, dtype=torch.bool, device=device)
 
-			# Concatenate image embeddings and start token embedding
-			inputs_embeds = torch.cat((image_embeddings, start_token_embeddings), dim=1)  # (bs, 2, n_embd)
+			for _ in range(max_length):
+				# Embed current tokens
+				input_embeds = self.decoder.transformer.wte(generated)  # [B, seq_len, n_embd]
+				
+				# Concatenate image embeddings at the front
+				combined_embeds = torch.cat([image_embeds.unsqueeze(1), input_embeds], dim=1)  # [B, 1+seq_len, n_embd]
 
-			# Update attention mask
-			attention_mask = torch.ones((batch_size, 2), dtype=torch.long, device=image_embeddings.device)  # (bs, 2)
+				# GPT forward
+				outputs = self.decoder(inputs_embeds=combined_embeds)
+				logits = outputs.logits[:, -1, :]  # [B, vocab_size]
 
-			# Generate captions
-			generated_ids = self.decoder.generate(
-				inputs_embeds=inputs_embeds,
-				attention_mask=attention_mask,
-				max_new_tokens=max_seq_len,
-				num_beams=5,
-    			early_stopping=True,
-				pad_token_id=self.decoder_tokenizer.pad_token_id,
-				eos_token_id=self.decoder_tokenizer.eos_token_id
-			)
+				# Greedy next token
+				next_token = torch.argmax(logits, dim=-1, keepdim=True)  # [B, 1]
 
-			# Remove image and <start> token ids
-			generated_ids = generated_ids[:, 2:]  # (bs, generated_seq_len)
+				# Append next token to sequences
+				generated = torch.cat([generated, next_token], dim=1)  # [B, seq_len+1]
 
-			# Decode the generated tokens
-			captions = self.decoder_tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+				# Check for EOS
+				eos_mask = (next_token.squeeze(-1) == self.decoder_tokenizer.eos_token_id)
+				done = done | eos_mask
+				if done.all():
+					break
 
-			return captions
+			# Decode the generated tokens for each sequence
+			generated_texts = []
+			for seq in generated:
+				if seq[0].item() == bos_token_id:
+					seq = seq[1:]
+				text = self.decoder_tokenizer.decode(seq, skip_special_tokens=True)
+				generated_texts.append(text.strip())
+
+			return generated_texts
 
 
 def train_DinoGpt(
@@ -146,6 +121,28 @@ def train_DinoGpt(
 	bleu = evaluate.load("bleu")
 	meteor = evaluate.load("meteor")
 	rouge = evaluate.load("rouge")
+
+	# Validation Phase
+	model.eval()
+	val_loss = 0
+	predictions, references = [], []
+	with torch.no_grad():
+		for images, captions in val_loader:			
+			# Compute loss
+			loss = model(images, captions)
+			val_loss += loss.item()
+			
+			# Generate captions
+			pred_captions = model(images, captions=None)
+			predictions.extend(pred_captions)
+			references.extend(captions)
+
+	# Print some random examples
+	print()
+	for i in np.random.randint(0, len(predictions), 5):
+		print(f"Prediction: {predictions[i]}")
+		print(f"Reference: {references[i]}")
+		print()
 
 	for epoch in range(num_epochs):
 		# Training Phase
