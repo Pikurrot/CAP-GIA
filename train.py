@@ -6,6 +6,7 @@ import torch
 from dotenv import load_dotenv
 from torch.utils.data import DataLoader
 from src.DinoGpt import DinoGpt, train_DinoGpt
+from src.DinoSmolLM import DinoSmolLM, train_DinoSmolLM
 from src.DatasetCaption import ReceipesDataset, collate_fn_lst
 from datetime import datetime
 
@@ -49,7 +50,11 @@ def train(
 
 	# Prepare the model
 	print(f"Preparing model {model_name}...")
-	model = DinoGpt(
+	if model_name == "DINO-GPT":
+		model_class = DinoGpt
+	elif model_name == "DINO-SmolLM":
+		model_class = DinoSmolLM
+	model = model_class(
 		output_dir=output_dir
 	)
 	model.to(device)
@@ -58,9 +63,9 @@ def train(
 	print("Training model...")
 	optimizer_name = config["optimizer"]
 	optimizer = getattr(torch.optim, optimizer_name)(
-		[{"params": model.dino.parameters(), "lr": 1e-5},
+		[{"params": model.encoder.parameters(), "lr": 1e-5},
 		{"params": model.proj.parameters(), "lr": 1e-4},
-		{"params": model.gpt.parameters(), "lr": 1e-5},]
+		{"params": model.decoder.parameters(), "lr": 1e-5},]
 	)
 	scheduler_conf = config["scheduler"]
 	if scheduler_conf is not None:
@@ -73,7 +78,11 @@ def train(
 		scheduler = None
 
 	# Train the model
-	train_DinoGpt(
+	if model_name == "DINO-GPT":
+		train_func = train_DinoGpt
+	elif model_name == "DINO-SmolLM":
+		train_func = train_DinoSmolLM
+	train_func(
 		model=model,
 		train_loader=train_loader,
 		val_loader=val_loader,
@@ -90,8 +99,8 @@ def train(
 	save_path = os.path.join(output_dir, f"{save_name}.pt")
 	print(f"Saving model to {save_path}")
 	torch.save(model.state_dict(), save_path)
-	if log_wandb:
-		wandb.save(save_path)
+	# if log_wandb:
+	# 	wandb.save(save_path)
 
 	# Finish
 	print("Done!")

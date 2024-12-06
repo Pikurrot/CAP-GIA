@@ -3,28 +3,27 @@ import torch
 import numpy as np
 from torch import nn
 from torch.utils.data import DataLoader
-from transformers import AutoModel, AutoImageProcessor, GPT2LMHeadModel, GPT2Tokenizer
+from transformers import AutoModel, AutoImageProcessor, AutoModelForCausalLM, AutoTokenizer
 import evaluate
 
-class DinoGpt(nn.Module):
+class DinoSmolLM(nn.Module):
 	def __init__(
 			self,
 			output_dir: str
 	):
-		super(DinoGpt, self).__init__()
+		super(DinoSmolLM, self).__init__()
 		self.output_dir = output_dir
 
 		# Load pre-trained DINO model
 		self.encoder_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-small", cache_dir=self.output_dir)
 		self.encoder = AutoModel.from_pretrained("facebook/dinov2-small", cache_dir=self.output_dir)
 
-		# Load pre-trained GPT-2 model
-		self.decoder_tokenizer = GPT2Tokenizer.from_pretrained("gpt2", cache_dir=self.output_dir)
+		# Load pre-trained SmolLM model
+		self.decoder_tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-1.7B")
+		self.decoder_model = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM2-1.7B")
 		self.decoder_tokenizer.bos_token = "<start>"
 		self.decoder_tokenizer.eos_token = "<end>"
 		self.decoder_tokenizer.pad_token = "[PAD]"
-		self.decoder = GPT2LMHeadModel.from_pretrained("gpt2", cache_dir=self.output_dir)
-		self.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
 
 		# Freeze DINO parameters
 		# for param in self.encoder.parameters():
@@ -35,9 +34,9 @@ class DinoGpt(nn.Module):
 
 		# Linear projection layer
 		self.proj = nn.Sequential(
-			nn.Linear(self.encoder.config.hidden_size, self.decoder.config.n_embd),
+			nn.Linear(self.encoder.config.hidden_size, self.decoder_model.config.hidden_size),
 			nn.ReLU(),
-			nn.Linear(self.decoder.config.n_embd, self.decoder.config.n_embd)
+			nn.Linear(self.decoder_model.config.hidden_size, self.decoder_model.config.hidden_size)
 		)
 
 	def forward(
@@ -56,11 +55,7 @@ class DinoGpt(nn.Module):
 
 		if captions is not None:
 			# Training with teacher forcing
-
-			# Preprocess captions
 			captions = [f"<start> {caption.lower().strip()} <end>" for caption in captions]
-
-			# Tokenize captions
 			encoding = self.decoder_tokenizer(
 				captions,
 				return_tensors="pt",
@@ -72,10 +67,10 @@ class DinoGpt(nn.Module):
 			attention_mask = encoding.attention_mask.to(self.encoder.device)  # (bs, seq_len)
 
 			# Get input embeddings
-			inputs_embeds = self.decoder.transformer.wte(input_ids)  # (bs, seq_len, n_embd)
+			inputs_embeds = self.decoder_model.transformer.wte(input_ids)  # (bs, seq_len, n_embd)
 
 			# Concatenate image embeddings with inputs
-			inputs_embeds = torch.cat((image_embeddings, inputs_embeds[:, :-1, :]), dim=1)  # Shape: (bs, seq_len + 1, n_embd)
+			inputs_embeds = torch.cat((image_embeddings, inputs_embeds[:, :-1, :]), dim=1)  # (bs, seq_len + 1, n_embd)
 
 			# Update attention mask
 			attention_mask = torch.cat(
@@ -88,20 +83,14 @@ class DinoGpt(nn.Module):
 			labels = input_ids
 
 			# Compute loss
-			outputs = self.decoder(
-				inputs_embeds=inputs_embeds,
-				attention_mask=attention_mask,
-				labels=labels
-			)
+			outputs = self.decoder_model(inputs_embeds=inputs_embeds, attention_mask=attention_mask, labels=labels)
 			loss = outputs.loss
 			return loss
 		else:
 			# Inference
 			batch_size = image_embeddings.size(0)
-
-			# Get <start> token embedding
 			start_token_id = self.decoder_tokenizer.bos_token_id
-			start_token_embedding = self.decoder.transformer.wte(
+			start_token_embedding = self.decoder_model.transformer.wte(
 				torch.tensor([start_token_id], device=image_embeddings.device)
 			).unsqueeze(0)  # (1, 1, n_embd)
 			start_token_embeddings = start_token_embedding.repeat(batch_size, 1, 1)  # (bs, 1, n_embd)
@@ -113,12 +102,12 @@ class DinoGpt(nn.Module):
 			attention_mask = torch.ones((batch_size, 2), dtype=torch.long, device=image_embeddings.device)  # (bs, 2)
 
 			# Generate captions
-			generated_ids = self.decoder.generate(
+			generated_ids = self.decoder_model.generate(
 				inputs_embeds=inputs_embeds,
 				attention_mask=attention_mask,
 				max_new_tokens=max_seq_len,
 				num_beams=5,
-    			early_stopping=True,
+				early_stopping=True,
 				pad_token_id=self.decoder_tokenizer.pad_token_id,
 				eos_token_id=self.decoder_tokenizer.eos_token_id
 			)
@@ -127,13 +116,13 @@ class DinoGpt(nn.Module):
 			generated_ids = generated_ids[:, 2:]  # (bs, generated_seq_len)
 
 			# Decode the generated tokens
-			captions = self.decoder_tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+			captions = self.decoder_tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
 
 			return captions
 
 
-def train_DinoGpt(
-		model: DinoGpt,
+def train_DinoSmolLM(
+		model: DinoSmolLM,
 		train_loader: DataLoader,
 		val_loader: DataLoader,
 		optimizer: torch.optim.Optimizer,
