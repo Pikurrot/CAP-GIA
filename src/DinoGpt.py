@@ -47,10 +47,9 @@ class DinoGpt(nn.Module):
 			max_seq_len: int = 20
 	):
 		# Extract image features
-		with torch.no_grad():
-			inputs = self.dino_processor(images, return_tensors="pt", padding=True, truncation=True)
-			inputs = inputs.to(self.dino.device)
-			image_features = self.dino(**inputs)[0][:, 0, :] # (bs, hidden_size)
+		inputs = self.dino_processor(images, return_tensors="pt", padding=True, truncation=True)
+		inputs = inputs.to(self.dino.device)
+		image_features = self.dino(**inputs)[0][:, 0, :] # (bs, hidden_size)
 
 		# Project image features to GPT-2 embedding size
 		image_embeddings = self.proj(image_features).unsqueeze(1) # (bs, 1, n_embd)
