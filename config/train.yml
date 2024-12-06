@@ -1,5 +1,5 @@
-model: DINO-SmolLM
-batch_size: 32
+model: ViT-GPT
+batch_size: 64
 epochs: 10
 lr: 0.00001
 optimizer: AdamW

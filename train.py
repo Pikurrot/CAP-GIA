@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from torch.utils.data import DataLoader
 from src.DinoGpt import DinoGpt, train_DinoGpt
 from src.DinoSmolLM import DinoSmolLM, train_DinoSmolLM
+from src.ViTGpt import ViTGpt, train_ViTGpt
 from src.DatasetCaption import ReceipesDataset, collate_fn_lst
 from datetime import datetime
 
@@ -50,10 +51,15 @@ def train(
 
 	# Prepare the model
 	print(f"Preparing model {model_name}...")
-	if model_name == "DINO-GPT":
+	if model_name == "ViT-GPT":
+		model_class = ViTGpt
+		train_func = train_ViTGpt
+	elif model_name == "DINO-GPT":
 		model_class = DinoGpt
+		train_func = train_DinoGpt
 	elif model_name == "DINO-SmolLM":
 		model_class = DinoSmolLM
+		train_func = train_DinoSmolLM
 	model = model_class(
 		output_dir=output_dir
 	)
@@ -78,10 +84,6 @@ def train(
 		scheduler = None
 
 	# Train the model
-	if model_name == "DINO-GPT":
-		train_func = train_DinoGpt
-	elif model_name == "DINO-SmolLM":
-		train_func = train_DinoSmolLM
 	train_func(
 		model=model,
 		train_loader=train_loader,
