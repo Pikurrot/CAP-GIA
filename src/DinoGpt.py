@@ -30,7 +30,7 @@ class DinoGpt(nn.Module):
 		# Project image embedding to GPT-2 embedding dimension
 		self.proj = nn.Linear(self.encoder.config.hidden_size, self.decoder.config.n_embd)
 
-	def forward(self, images, captions=None, max_length=30):
+	def forward(self, images, captions=None, max_length=30, repetition_penalty=2.0):
 		device = next(self.parameters()).device
 
 		# 1. Encode images with DINO
@@ -73,6 +73,8 @@ class DinoGpt(nn.Module):
 			generated = bos_tokens
 			done = torch.zeros(B, dtype=torch.bool, device=device)
 
+			past_tokens = None  # Keep track of generated tokens for applying repetition penalty
+
 			for _ in range(max_length):
 				# Embed current tokens
 				input_embeds = self.decoder.transformer.wte(generated)  # [B, seq_len, n_embd]
@@ -84,11 +86,23 @@ class DinoGpt(nn.Module):
 				outputs = self.decoder(inputs_embeds=combined_embeds)
 				logits = outputs.logits[:, -1, :]  # [B, vocab_size]
 
+				# Apply repetition penalty to logits
+				if past_tokens is not None:
+					for batch_idx in range(B):
+						for token in past_tokens[batch_idx]:
+							logits[batch_idx, token] /= repetition_penalty
+
 				# Greedy next token
 				next_token = torch.argmax(logits, dim=-1, keepdim=True)  # [B, 1]
 
 				# Append next token to sequences
 				generated = torch.cat([generated, next_token], dim=1)  # [B, seq_len+1]
+
+				# Track tokens for repetition penalty
+				if past_tokens is None:
+					past_tokens = next_token
+				else:
+					past_tokens = torch.cat([past_tokens, next_token], dim=1)
 
 				# Check for EOS
 				eos_mask = (next_token.squeeze(-1) == self.decoder_tokenizer.eos_token_id)
@@ -133,7 +147,7 @@ def train_DinoGpt(
 			
 			optimizer.zero_grad()
 			loss.backward()
-			torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+			torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 			optimizer.step()
 			
 			if log_wandb:

@@ -71,7 +71,7 @@ def train(
 	optimizer = getattr(torch.optim, optimizer_name)(
 		[{"params": model.encoder.parameters(), "lr": 1e-5},
 		{"params": model.proj.parameters(), "lr": 1e-4},
-		{"params": model.decoder.parameters(), "lr": 1e-5},]
+		{"params": model.decoder.parameters(), "lr": 1e-4},]
 	)
 	scheduler_conf = config["scheduler"]
 	if scheduler_conf is not None:
