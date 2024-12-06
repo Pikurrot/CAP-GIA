@@ -41,8 +41,8 @@ class DinoSmolLM(nn.Module):
 
 	def forward(
 			self,
-			images: torch.Tensor, # (bs, channels, h, w)
-			captions: torch.Tensor = None, # (bs, seq_len)
+			images: list, # PIL images
+			captions: list = None, # List of strings
 			max_seq_len: int = 20
 	):
 		# Extract image features
@@ -61,7 +61,7 @@ class DinoSmolLM(nn.Module):
 				return_tensors="pt",
 				padding=True,
 				truncation=True,
-				add_special_tokens=True
+				add_special_tokens=False # Special tokens are already added
 			)
 			input_ids = encoding.input_ids.to(self.encoder.device)  # (bs, seq_len)
 			attention_mask = encoding.attention_mask.to(self.encoder.device)  # (bs, seq_len)
@@ -108,9 +108,9 @@ class DinoSmolLM(nn.Module):
 				max_new_tokens=max_seq_len,
 				num_beams=5,
 				repetition_penalty=3.0,
-				do_sample=True,
-				top_k=50,
-				top_p=0.9,
+				# do_sample=True,
+				# top_k=50,
+				# top_p=0.9,
 				early_stopping=True,
 				pad_token_id=self.decoder_tokenizer.pad_token_id,
 				eos_token_id=self.decoder_tokenizer.eos_token_id
