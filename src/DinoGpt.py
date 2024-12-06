@@ -30,7 +30,7 @@ class DinoGpt(nn.Module):
 		# Project image embedding to GPT-2 embedding dimension
 		self.proj = nn.Linear(self.encoder.config.hidden_size, self.decoder.config.n_embd)
 
-	def forward(self, images, captions=None, max_length=30, repetition_penalty=2.0):
+	def forward(self, images, captions=None, max_length=30, repetition_penalty=1.2):
 		device = next(self.parameters()).device
 
 		# 1. Encode images with DINO
