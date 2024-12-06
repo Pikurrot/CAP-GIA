@@ -14,15 +14,15 @@ class ViTGpt(nn.Module):
 		super().__init__()
 
 		# Load Vision Transformer
-		self.encoder_processor = ViTImageProcessor.from_pretrained("google/vit-base-patch16-224")
-		self.encoder = ViTModel.from_pretrained("google/vit-base-patch16-224")
+		self.encoder_processor = ViTImageProcessor.from_pretrained("google/vit-base-patch16-224", cache_dir=output_dir)
+		self.encoder = ViTModel.from_pretrained("google/vit-base-patch16-224", cache_dir=output_dir)
 		self.encoder.eval()  # Usually keep it frozen
 		for param in self.encoder.parameters():
 			param.requires_grad = False
 
 		# Load GPT-2
-		self.decoder = GPT2LMHeadModel.from_pretrained("gpt2")
-		self.decoder_tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+		self.decoder = GPT2LMHeadModel.from_pretrained("gpt2", cache_dir=output_dir)
+		self.decoder_tokenizer = GPT2Tokenizer.from_pretrained("gpt2", cache_dir=output_dir)
 		if self.decoder_tokenizer.pad_token is None:
 			self.decoder_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 			self.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
