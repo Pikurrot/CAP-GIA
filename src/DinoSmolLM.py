@@ -107,6 +107,10 @@ class DinoSmolLM(nn.Module):
 				attention_mask=attention_mask,
 				max_new_tokens=max_seq_len,
 				num_beams=5,
+				repetition_penalty=3.0,
+				do_sample=True,
+				top_k=50,
+				top_p=0.9,
 				early_stopping=True,
 				pad_token_id=self.decoder_tokenizer.pad_token_id,
 				eos_token_id=self.decoder_tokenizer.eos_token_id
