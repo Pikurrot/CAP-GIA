@@ -115,6 +115,7 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--out_dir', type=str, default='out')
 	parser.add_argument("--data_dir", type=str, default="")
+	parser.add_argument("--gpu", type=int, default=-1)
 	args = parser.parse_args()
 	print(args)
 
@@ -125,6 +126,8 @@ if __name__ == '__main__':
 		config = yaml.load(f, Loader=yaml.FullLoader)
 
 	# Train model on dataset
+	if args.gpu >= 0:
+		os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
 	train(
 		output_dir=args.out_dir,
 		data_dir=args.data_dir,

@@ -16,9 +16,9 @@ class DinoGpt(nn.Module):
 		# Load pre-trained DINO model
 		self.encoder_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-small", cache_dir=output_dir)
 		self.encoder = AutoModel.from_pretrained("facebook/dinov2-small", cache_dir=output_dir)
-		self.encoder.eval()  # Usually keep it frozen
+		# Allow fine-tuning of the DINO encoder (unfreeze all layers)
 		for param in self.encoder.parameters():
-			param.requires_grad = False
+			param.requires_grad = True
 
 		# Load GPT-2 model
 		self.decoder = GPT2LMHeadModel.from_pretrained("gpt2", cache_dir=output_dir)
@@ -34,11 +34,11 @@ class DinoGpt(nn.Module):
 		device = next(self.parameters()).device
 
 		# 1. Encode images with DINO
-		with torch.no_grad():
-			pixel_values = self.encoder_processor(images, return_tensors="pt").pixel_values.to(device)
-			dino_outputs = self.encoder(pixel_values=pixel_values)
-			# Take the CLS token embedding
-			image_embeds = dino_outputs.last_hidden_state[:, 0, :]  # [B, hidden_size]
+		pixel_values = self.encoder_processor(images, return_tensors="pt").pixel_values.to(device)
+		dino_outputs = self.encoder(pixel_values=pixel_values)
+		# Take the CLS token embedding
+		image_embeds = dino_outputs.last_hidden_state[:, 0, :]  # [B, hidden_size]
+
 		# Project to GPT embedding size
 		image_embeds = self.proj(image_embeds)  # [B, n_embd]
 
