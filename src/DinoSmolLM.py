@@ -19,8 +19,8 @@ class DinoSmolLM(nn.Module):
 		self.encoder = AutoModel.from_pretrained("facebook/dinov2-small", cache_dir=self.output_dir)
 
 		# Load pre-trained SmolLM model
-		self.decoder_tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-1.7B")
-		self.decoder_model = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM2-1.7B")
+		self.decoder_tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-1.7B", cache_dir=self.output_dir)
+		self.decoder = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM2-1.7B", cache_dir=self.output_dir)
 		self.decoder_tokenizer.bos_token = "<start>"
 		self.decoder_tokenizer.eos_token = "<end>"
 		self.decoder_tokenizer.pad_token = "[PAD]"
@@ -34,9 +34,9 @@ class DinoSmolLM(nn.Module):
 
 		# Linear projection layer
 		self.proj = nn.Sequential(
-			nn.Linear(self.encoder.config.hidden_size, self.decoder_model.config.hidden_size),
+			nn.Linear(self.encoder.config.hidden_size, self.decoder.config.hidden_size),
 			nn.ReLU(),
-			nn.Linear(self.decoder_model.config.hidden_size, self.decoder_model.config.hidden_size)
+			nn.Linear(self.decoder.config.hidden_size, self.decoder.config.hidden_size)
 		)
 
 	def forward(
@@ -67,7 +67,7 @@ class DinoSmolLM(nn.Module):
 			attention_mask = encoding.attention_mask.to(self.encoder.device)  # (bs, seq_len)
 
 			# Get input embeddings
-			inputs_embeds = self.decoder_model.transformer.wte(input_ids)  # (bs, seq_len, n_embd)
+			inputs_embeds = self.decoder.transformer.wte(input_ids)  # (bs, seq_len, n_embd)
 
 			# Concatenate image embeddings with inputs
 			inputs_embeds = torch.cat((image_embeddings, inputs_embeds[:, :-1, :]), dim=1)  # (bs, seq_len + 1, n_embd)
@@ -83,14 +83,14 @@ class DinoSmolLM(nn.Module):
 			labels = input_ids
 
 			# Compute loss
-			outputs = self.decoder_model(inputs_embeds=inputs_embeds, attention_mask=attention_mask, labels=labels)
+			outputs = self.decoder(inputs_embeds=inputs_embeds, attention_mask=attention_mask, labels=labels)
 			loss = outputs.loss
 			return loss
 		else:
 			# Inference
 			batch_size = image_embeddings.size(0)
 			start_token_id = self.decoder_tokenizer.bos_token_id
-			start_token_embedding = self.decoder_model.transformer.wte(
+			start_token_embedding = self.decoder.transformer.wte(
 				torch.tensor([start_token_id], device=image_embeddings.device)
 			).unsqueeze(0)  # (1, 1, n_embd)
 			start_token_embeddings = start_token_embedding.repeat(batch_size, 1, 1)  # (bs, 1, n_embd)
@@ -102,7 +102,7 @@ class DinoSmolLM(nn.Module):
 			attention_mask = torch.ones((batch_size, 2), dtype=torch.long, device=image_embeddings.device)  # (bs, 2)
 
 			# Generate captions
-			generated_ids = self.decoder_model.generate(
+			generated_ids = self.decoder.generate(
 				inputs_embeds=inputs_embeds,
 				attention_mask=attention_mask,
 				max_new_tokens=max_seq_len,
