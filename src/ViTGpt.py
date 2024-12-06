@@ -82,7 +82,7 @@ class ViTGpt(nn.Module):
 				bos_token_id = self.decoder_tokenizer.eos_token_id
 
 			# Start the generation loop
-			generated = torch.tensor([[bos_token_id]], device=device)  # [B, 1]
+			generated = torch.full((image_embeds.size(0), 1), bos_token_id, device=device)  # [B, 1]
 			for _ in range(max_length):
 				# Embed current tokens
 				input_embeds = self.decoder.transformer.wte(generated) # [B, seq_len, n_embd]
