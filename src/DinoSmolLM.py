@@ -21,9 +21,9 @@ class DinoSmolLM(nn.Module):
 		# Load pre-trained SmolLM model
 		self.decoder_tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-1.7B", cache_dir=self.output_dir)
 		self.decoder = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM2-1.7B", cache_dir=self.output_dir)
-		self.decoder_tokenizer.bos_token = "<start>"
-		self.decoder_tokenizer.eos_token = "<end>"
-		self.decoder_tokenizer.pad_token = "[PAD]"
+		special_tokens = {'bos_token': '<start>', 'eos_token': '<end>', 'pad_token': '[PAD]'}
+		self.decoder_tokenizer.add_special_tokens(special_tokens)
+		self.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
 
 		# Freeze DINO parameters
 		# for param in self.encoder.parameters():
@@ -67,7 +67,7 @@ class DinoSmolLM(nn.Module):
 			attention_mask = encoding.attention_mask.to(self.encoder.device)  # (bs, seq_len)
 
 			# Get input embeddings
-			inputs_embeds = self.decoder.transformer.wte(input_ids)  # (bs, seq_len, n_embd)
+			inputs_embeds = self.decoder.model.embed_tokens(input_ids)  # (bs, seq_len, n_embd)
 
 			# Concatenate image embeddings with inputs
 			inputs_embeds = torch.cat((image_embeddings, inputs_embeds[:, :-1, :]), dim=1)  # (bs, seq_len + 1, n_embd)
@@ -90,7 +90,7 @@ class DinoSmolLM(nn.Module):
 			# Inference
 			batch_size = image_embeddings.size(0)
 			start_token_id = self.decoder_tokenizer.bos_token_id
-			start_token_embedding = self.decoder.transformer.wte(
+			start_token_embedding = self.decoder.model.embed_tokens(
 				torch.tensor([start_token_id], device=image_embeddings.device)
 			).unsqueeze(0)  # (1, 1, n_embd)
 			start_token_embeddings = start_token_embedding.repeat(batch_size, 1, 1)  # (bs, 1, n_embd)
