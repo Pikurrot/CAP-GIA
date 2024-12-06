@@ -78,9 +78,9 @@ class ViTGpt(nn.Module):
 
 			# Start each sequence with BOS token
 			bos_token_id = self.decoder_tokenizer.bos_token_id if self.decoder_tokenizer.bos_token_id is not None else self.decoder_tokenizer.eos_token_id
-			bos_tokens = torch.full((B, 1), bos_token_id, device=self.device)  # [B, 1]
+			bos_tokens = torch.full((B, 1), bos_token_id, device=device)  # [B, 1]
 			generated = bos_tokens
-			done = torch.zeros(B, dtype=torch.bool, device=self.device)
+			done = torch.zeros(B, dtype=torch.bool, device=device)
 
 			for _ in range(max_length):
 				# Embed current tokens
