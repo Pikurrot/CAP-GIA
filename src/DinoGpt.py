@@ -122,28 +122,6 @@ def train_DinoGpt(
 	meteor = evaluate.load("meteor")
 	rouge = evaluate.load("rouge")
 
-	# Validation Phase
-	model.eval()
-	val_loss = 0
-	predictions, references = [], []
-	with torch.no_grad():
-		for images, captions in val_loader:			
-			# Compute loss
-			loss = model(images, captions)
-			val_loss += loss.item()
-			
-			# Generate captions
-			pred_captions = model(images, captions=None)
-			predictions.extend(pred_captions)
-			references.extend(captions)
-
-	# Print some random examples
-	print()
-	for i in np.random.randint(0, len(predictions), 5):
-		print(f"Prediction: {predictions[i]}")
-		print(f"Reference: {references[i]}")
-		print()
-
 	for epoch in range(num_epochs):
 		# Training Phase
 		model.train()
