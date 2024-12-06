@@ -28,7 +28,7 @@ class ViTGpt(nn.Module):
 			self.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
 
 		# Project image embedding to GPT-2 embedding dimension
-		self.image_proj = nn.Linear(self.encoder.config.hidden_size, self.decoder.config.n_embd)
+		self.proj = nn.Linear(self.encoder.config.hidden_size, self.decoder.config.n_embd)
 
 	def forward(self, images, captions=None, max_length=30):
 		device = next(self.parameters()).device
@@ -40,7 +40,7 @@ class ViTGpt(nn.Module):
 			# Take the CLS token embedding
 			image_embeds = vit_outputs.last_hidden_state[:,0,:]  # [B, hidden_size]
 		# Project to GPT embedding size
-		image_embeds = self.image_proj(image_embeds)  # [B, n_embd]
+		image_embeds = self.proj(image_embeds)  # [B, n_embd]
 
 		if captions is not None:
 			# Training/Validation Mode
