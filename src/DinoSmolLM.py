@@ -19,8 +19,8 @@ class DinoSmolLM(nn.Module):
 		self.encoder = AutoModel.from_pretrained("facebook/dinov2-small", cache_dir=self.output_dir)
 
 		# Load pre-trained SmolLM model
-		self.decoder_tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-1.7B", cache_dir=self.output_dir)
-		self.decoder = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM2-1.7B", cache_dir=self.output_dir)
+		self.decoder_tokenizer = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolLM2-135M", cache_dir=self.output_dir)
+		self.decoder = AutoModelForCausalLM.from_pretrained("HuggingFaceTB/SmolLM2-135M", cache_dir=self.output_dir)
 		special_tokens = {'bos_token': '<start>', 'eos_token': '<end>', 'pad_token': '[PAD]'}
 		self.decoder_tokenizer.add_special_tokens(special_tokens)
 		self.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
@@ -46,7 +46,7 @@ class DinoSmolLM(nn.Module):
 			max_seq_len: int = 20
 	):
 		# Extract image features
-		inputs = self.encoder_processor(images, return_tensors="pt", padding=True, truncation=True)
+		inputs = self.encoder_processor(images, return_tensors="pt")
 		inputs = inputs.to(self.encoder.device)
 		image_features = self.encoder(**inputs)[0][:, 0, :] # (bs, hidden_size)
 
