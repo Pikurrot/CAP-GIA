@@ -14,9 +14,8 @@ from datetime import datetime
 log_wandb = True
 
 def train(
-		output_dir: str,
-		data_dir: str,
-		config: dict
+		config: dict,
+		**kwargs
 ):
 	# Initialize wandb
 	model_name = config["model"]
@@ -33,9 +32,9 @@ def train(
 
 	# Prepare the dataset
 	print("Preparing dataset...")
-	data_path = os.path.join(data_dir, "receipes")
-	train_set = ReceipesDataset(data_path, split="train")
-	val_set = ReceipesDataset(data_path, split="val")
+	data_path = os.path.join(kwargs["data_dir"], "receipes")
+	train_set = ReceipesDataset(data_path, split="train", data_size=kwargs["data_size"])
+	val_set = ReceipesDataset(data_path, split="val", data_size=kwargs["data_size"])
 	train_loader = DataLoader(
 		train_set,
 		batch_size=config["batch_size"],
@@ -60,6 +59,7 @@ def train(
 	elif model_name == "DINO-SmolLM":
 		model_class = DinoSmolLM
 		train_func = train_DinoSmolLM
+	output_dir = kwargs["out_dir"]
 	model = model_class(
 		output_dir=output_dir
 	)
@@ -113,9 +113,10 @@ def train(
 if __name__ == '__main__':
 	# Parse arguments
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--out_dir', type=str, default='out')
+	parser.add_argument('--out_dir', type=str, default="out")
 	parser.add_argument("--data_dir", type=str, default="")
 	parser.add_argument("--gpu", type=int, default=-1)
+	parser.add_argument("--data_size", type=float, default=0.05)
 	args = parser.parse_args()
 	print(args)
 
@@ -129,7 +130,6 @@ if __name__ == '__main__':
 	if args.gpu >= 0:
 		os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
 	train(
-		output_dir=args.out_dir,
-		data_dir=args.data_dir,
-		config=config
+		config=config,
+		**vars(args)
 	)

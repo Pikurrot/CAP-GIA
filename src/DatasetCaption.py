@@ -86,8 +86,8 @@ class ReceipesDataset(Dataset):
 			data_path: str,
 			transform_image: bool = False,
 			split: Literal["train", "val", "test"] = "train",
-			splits_size: list = [0.7, 0.1, 0.2],
-			split_size: int=1.0
+			split_size: list = [0.7, 0.1, 0.2],
+			data_size: int=1.0
 	):
 		super(ReceipesDataset, self).__init__()
 		self.img_path = os.path.join(data_path, 'FoodImages', 'Food Images')
@@ -114,8 +114,8 @@ class ReceipesDataset(Dataset):
 
 		# Split data
 		total_size = len(self.cap_data)
-		train_end = int(splits_size[0] * total_size)
-		val_end = train_end + int(splits_size[1] * total_size)
+		train_end = int(split_size[0] * total_size)
+		val_end = train_end + int(split_size[1] * total_size)
 
 		if split == "train":
 			self.cap_data = self.cap_data[:train_end]
@@ -124,7 +124,7 @@ class ReceipesDataset(Dataset):
 		elif split == "test":
 			self.cap_data = self.cap_data[val_end:]
 
-		self.cap_data = self.cap_data.sample(frac=split_size, random_state=42)
+		self.cap_data = self.cap_data.sample(frac=data_size, random_state=42)
 	
 	def __len__(self):
 		return len(self.cap_data)
