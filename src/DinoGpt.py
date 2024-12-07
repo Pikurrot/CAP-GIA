@@ -32,7 +32,7 @@ class DinoGpt(nn.Module):
 			output_dir: str
 	):
 		super().__init__()
-		
+
 		# Load pre-trained DINO model
 		self.encoder_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-small", cache_dir=output_dir)
 		self.encoder = AutoModel.from_pretrained("facebook/dinov2-small", cache_dir=output_dir)
@@ -96,7 +96,7 @@ class DinoGpt(nn.Module):
 
 			# Pass through GPT2
 			outputs = self.decoder(inputs_embeds=inputs_embeds, attention_mask=torch.cat([torch.ones_like(attention_mask[:, :1]), attention_mask], dim=1), labels=labels)
-			
+
 			# Compute loss
 			image_latent = F.normalize(image_embeds, p=2, dim=1) # Normalize to unit length
 			text_latent = F.normalize(text_embeds, p=2, dim=1)
@@ -121,7 +121,7 @@ class DinoGpt(nn.Module):
 				for _ in range(max_length):
 					# Embed current tokens
 					text_embeds = self.decoder.transformer.wte(generated)  # [B, seq_len, n_embd]
-					
+
 					# Concatenate image embeddings at the front
 					combined_embeds = torch.cat([image_embeds.unsqueeze(1), text_embeds], dim=1)  # [B, 1+seq_len, n_embd]
 
@@ -178,7 +178,7 @@ class DinoGpt(nn.Module):
 
 			elif inference_mode == "beam_search":
 				# Beam search generation
-				beams = [(bos_token_id, 0.0, torch.full((1, 1), bos_token_id, device=device))]  # List of (tokens, score, tensor)
+				beams = [([bos_token_id], 0.0, torch.full((1, 1), bos_token_id, device=device))]  # List of (tokens_list, score, tensor)
 				completed = []
 
 				for _ in range(max_length):
@@ -186,7 +186,7 @@ class DinoGpt(nn.Module):
 					for tokens, score, tensor in beams:
 						# Embed current tokens
 						text_embeds = self.decoder.transformer.wte(tensor)  # [1, seq_len, n_embd]
-						
+
 						# Concatenate image embeddings at the front
 						combined_embeds = torch.cat([image_embeds[0].unsqueeze(0).unsqueeze(1), text_embeds], dim=1)  # [1, 1+seq_len, n_embd]
 
@@ -195,7 +195,7 @@ class DinoGpt(nn.Module):
 						logits = outputs.logits[:, -1, :]  # [1, vocab_size]
 
 						# Apply repetition penalty
-						for token in tokens:
+						for token in tokens:  # `tokens` is now a list of token IDs
 							logits[0, token] /= repetition_penalty
 
 						# Log probabilities
@@ -204,7 +204,7 @@ class DinoGpt(nn.Module):
 						# Get top-k candidates
 						top_k_probs, top_k_indices = torch.topk(probs, n_beams, dim=-1)
 						for prob, index in zip(top_k_probs[0], top_k_indices[0]):
-							new_tokens = tokens + [index.item()]
+							new_tokens = tokens + [index.item()]  # Append new token to the existing list
 							new_score = score + prob.item()
 							new_tensor = torch.cat([tensor, index.unsqueeze(0).unsqueeze(0)], dim=1)
 							if index.item() == eos_token_id:
