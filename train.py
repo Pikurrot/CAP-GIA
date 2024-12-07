@@ -69,7 +69,7 @@ def train(
 	print("Training model...")
 	optimizer_name = config["optimizer"]
 	optimizer = getattr(torch.optim, optimizer_name)(
-		[{"params": model.encoder.parameters(), "lr": 1e-5},
+		[{"params": model.encoder.parameters(), "lr": 1e-4},
 		{"params": model.proj.parameters(), "lr": 1e-4},
 		{"params": model.decoder.parameters(), "lr": 1e-4},]
 	)

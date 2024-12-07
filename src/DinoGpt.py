@@ -28,19 +28,25 @@ class DinoGpt(nn.Module):
 			self.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
 
 		# Project image embedding to GPT-2 embedding dimension
-		self.proj = nn.Linear(self.encoder.config.hidden_size, self.decoder.config.n_embd)
+		self.proj = nn.Sequential(
+			nn.Linear(self.encoder.config.hidden_size, self.decoder.config.n_embd),
+			nn.ReLU(),
+			nn.Linear(self.decoder.config.n_embd, self.decoder.config.n_embd)
+		)
 
-	def forward(self, images, captions=None, max_length=30, repetition_penalty=1.2):
+	def forward(self, images, captions=None, max_length=30, repetition_penalty=1.2, alpha=2.0):
 		device = next(self.parameters()).device
 
-		# 1. Encode images with DINO
+		# Encode images with DINO
 		pixel_values = self.encoder_processor(images, return_tensors="pt").pixel_values.to(device)
 		dino_outputs = self.encoder(pixel_values=pixel_values)
-		# Take the CLS token embedding
-		image_embeds = dino_outputs.last_hidden_state[:, 0, :]  # [B, hidden_size]
+		
+		# Average pool the output of the last layer
+		image_embeds = dino_outputs.last_hidden_state.mean(dim=1)  # [B, hidden_size]
 
 		# Project to GPT embedding size
-		image_embeds = self.proj(image_embeds)  # [B, n_embd]
+		image_embeds = self.proj(image_embeds) # [B, n_embd]
+		image_embeds = alpha * image_embeds # Weigth for image embeddings
 
 		if captions is not None:
 			# Training/Validation Mode
@@ -51,8 +57,7 @@ class DinoGpt(nn.Module):
 
 			# Create input_embeds by concatenating image_embeds as a prefix
 			input_embeds = self.decoder.transformer.wte(input_ids)  # [B, L, n_embd]
-			image_embeds = image_embeds.unsqueeze(1)            # [B, 1, n_embd]
-			inputs_embeds = torch.cat([image_embeds, input_embeds], dim=1)  # [B, 1+L, n_embd]
+			inputs_embeds = torch.cat([image_embeds.unsqueeze(1), input_embeds], dim=1)  # [B, 1+L, n_embd]
 
 			# Adjust labels to match outputs
 			labels = input_ids.clone()
