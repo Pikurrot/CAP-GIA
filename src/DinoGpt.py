@@ -1,10 +1,28 @@
 import wandb
 import torch
 import numpy as np
+import torch.nn.functional as F
 from torch import nn
 from torch.utils.data import DataLoader
 from transformers import AutoModel, AutoImageProcessor, GPT2LMHeadModel, GPT2Tokenizer
 import evaluate
+
+
+def contrastive_criterion(image_embeds, text_embeds, temperature=0.1):
+	# Normalize embeddings to unit vectors
+	image_embeds = F.normalize(image_embeds, p=2, dim=1)
+	text_embeds = F.normalize(text_embeds, p=2, dim=1)
+
+	# Compute similarity matrix (batch_size x batch_size)
+	logits = torch.mm(image_embeds, text_embeds.t()) / temperature
+
+	# Targets are diagonal (positive pairs)
+	targets = torch.arange(logits.size(0), device=logits.device)
+
+	# Compute cross-entropy loss
+	loss = F.cross_entropy(logits, targets)
+	return loss
+
 
 class DinoGpt(nn.Module):
 	def __init__(
@@ -34,7 +52,15 @@ class DinoGpt(nn.Module):
 			nn.Linear(self.decoder.config.n_embd, self.decoder.config.n_embd)
 		)
 
-	def forward(self, images, captions=None, max_length=30, repetition_penalty=1.2, alpha=2.0):
+	def forward(
+			self,
+			images: list, # PIL images
+			captions: list[str] = None,
+			max_length: int=30,
+			repetition_penalty: float=1.2,
+			alpha: float=2.0, # Image embedding weight
+			lambda_contrastive: float=0.1
+	):
 		device = next(self.parameters()).device
 
 		# Encode images with DINO
@@ -46,7 +72,7 @@ class DinoGpt(nn.Module):
 
 		# Project to GPT embedding size
 		image_embeds = self.proj(image_embeds) # [B, n_embd]
-		image_embeds = alpha * image_embeds # Weigth for image embeddings
+		image_embeds = alpha * image_embeds
 
 		if captions is not None:
 			# Training/Validation Mode
@@ -55,9 +81,9 @@ class DinoGpt(nn.Module):
 			input_ids = encodings.input_ids.to(device)    # [B, L]
 			attention_mask = encodings.attention_mask.to(device)
 
-			# Create input_embeds by concatenating image_embeds as a prefix
-			input_embeds = self.decoder.transformer.wte(input_ids)  # [B, L, n_embd]
-			inputs_embeds = torch.cat([image_embeds.unsqueeze(1), input_embeds], dim=1)  # [B, 1+L, n_embd]
+			# Create inputs_embeds by concatenating image_embeds as a prefix
+			text_embeds = self.decoder.transformer.wte(input_ids)  # [B, L, n_embd]
+			inputs_embeds = torch.cat([image_embeds.unsqueeze(1), text_embeds], dim=1)  # [B, 1+L, n_embd]
 
 			# Adjust labels to match outputs
 			labels = input_ids.clone()
@@ -65,8 +91,14 @@ class DinoGpt(nn.Module):
 
 			# Pass through GPT2
 			outputs = self.decoder(inputs_embeds=inputs_embeds, attention_mask=torch.cat([torch.ones_like(attention_mask[:, :1]), attention_mask], dim=1), labels=labels)
-			loss = outputs.loss
-			return loss
+			
+			# Compute loss
+			image_latent = F.normalize(image_embeds, p=2, dim=1) # Normalize to unit length
+			text_latent = F.normalize(text_embeds, p=2, dim=1)
+			cross_entropy_loss = outputs.loss
+			contrastive_loss = contrastive_criterion(image_latent, text_latent)
+			total_loss = cross_entropy_loss + lambda_contrastive * contrastive_loss
+			return total_loss
 
 		else:
 			# Inference Mode
@@ -82,10 +114,10 @@ class DinoGpt(nn.Module):
 
 			for _ in range(max_length):
 				# Embed current tokens
-				input_embeds = self.decoder.transformer.wte(generated)  # [B, seq_len, n_embd]
+				text_embeds = self.decoder.transformer.wte(generated)  # [B, seq_len, n_embd]
 				
 				# Concatenate image embeddings at the front
-				combined_embeds = torch.cat([image_embeds.unsqueeze(1), input_embeds], dim=1)  # [B, 1+seq_len, n_embd]
+				combined_embeds = torch.cat([image_embeds.unsqueeze(1), text_embeds], dim=1)  # [B, 1+seq_len, n_embd]
 
 				# GPT forward
 				outputs = self.decoder(inputs_embeds=combined_embeds)

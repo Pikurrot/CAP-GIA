@@ -69,9 +69,9 @@ def train(
 	print("Training model...")
 	optimizer_name = config["optimizer"]
 	optimizer = getattr(torch.optim, optimizer_name)(
-		[{"params": model.encoder.parameters(), "lr": 1e-4},
-		{"params": model.proj.parameters(), "lr": 1e-4},
-		{"params": model.decoder.parameters(), "lr": 1e-4},]
+		[{"params": model.encoder.parameters(), "lr": config["lr"]},
+		{"params": model.proj.parameters(), "lr": config["lr"]},
+		{"params": model.decoder.parameters(), "lr": config["lr"]},]
 	)
 	scheduler_conf = config["scheduler"]
 	if scheduler_conf is not None:
