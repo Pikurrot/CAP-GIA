@@ -62,7 +62,7 @@ class DinoGpt(nn.Module):
 			repetition_penalty: float=1.2,
 			alpha: float=2.0, # Image embedding weight
 			lambda_contrastive: float=0.1,
-			inference_mode: Literal["sampling", "beam_search"] = "sampling",
+			inference_mode: Literal["sampling", "beam_search"] = "beam_search",
 			sampling_threshold: float=-1, # If -1, use multinomial
 			n_beams: int=5
 	):
@@ -178,55 +178,61 @@ class DinoGpt(nn.Module):
 
 			elif inference_mode == "beam_search":
 				# Beam search generation
-				beams = [([bos_token_id], 0.0, torch.full((1, 1), bos_token_id, device=device))]  # List of (tokens_list, score, tensor)
-				completed = []
+				generated_texts = []
 
-				for _ in range(max_length):
-					new_beams = []
-					for tokens, score, tensor in beams:
-						# Embed current tokens
-						text_embeds = self.decoder.transformer.wte(tensor)  # [1, seq_len, n_embd]
+				for b in range(B):  # Process each image independently
+					# Initialize beams for this image
+					beams = [([bos_token_id], 0.0, torch.full((1, 1), bos_token_id, device=device))]  # List of (tokens_list, score, tensor)
+					completed = []
 
-						# Concatenate image embeddings at the front
-						combined_embeds = torch.cat([image_embeds[0].unsqueeze(0).unsqueeze(1), text_embeds], dim=1)  # [1, 1+seq_len, n_embd]
+					for _ in range(max_length):
+						new_beams = []
+						for tokens, score, tensor in beams:
+							# Embed current tokens
+							text_embeds = self.decoder.transformer.wte(tensor)  # [1, seq_len, n_embd]
 
-						# GPT forward
-						outputs = self.decoder(inputs_embeds=combined_embeds)
-						logits = outputs.logits[:, -1, :]  # [1, vocab_size]
+							# Concatenate image embeddings at the front
+							combined_embeds = torch.cat([image_embeds[b].unsqueeze(0).unsqueeze(1), text_embeds], dim=1)  # [1, 1+seq_len, n_embd]
 
-						# Apply repetition penalty
-						for token in tokens:  # `tokens` is now a list of token IDs
-							logits[0, token] /= repetition_penalty
+							# GPT forward
+							outputs = self.decoder(inputs_embeds=combined_embeds)
+							logits = outputs.logits[:, -1, :]  # [1, vocab_size]
 
-						# Log probabilities
-						probs = torch.log_softmax(logits, dim=-1)
+							# Apply repetition penalty
+							for token in tokens:
+								logits[0, token] /= repetition_penalty
 
-						# Get top-k candidates
-						top_k_probs, top_k_indices = torch.topk(probs, n_beams, dim=-1)
-						for prob, index in zip(top_k_probs[0], top_k_indices[0]):
-							new_tokens = tokens + [index.item()]  # Append new token to the existing list
-							new_score = score + prob.item()
-							new_tensor = torch.cat([tensor, index.unsqueeze(0).unsqueeze(0)], dim=1)
-							if index.item() == eos_token_id:
-								completed.append((new_tokens, new_score))
-							else:
-								new_beams.append((new_tokens, new_score, new_tensor))
+							# Log probabilities
+							probs = torch.log_softmax(logits, dim=-1)
 
-					# Keep the top num_beams beams
-					new_beams = sorted(new_beams, key=lambda x: x[1], reverse=True)[:n_beams]
-					beams = new_beams
+							# Get top-k candidates
+							top_k_probs, top_k_indices = torch.topk(probs, n_beams, dim=-1)
+							for prob, index in zip(top_k_probs[0], top_k_indices[0]):
+								new_tokens = tokens + [index.item()]  # Append new token to the existing list
+								new_score = score + prob.item()
+								new_tensor = torch.cat([tensor, index.unsqueeze(0).unsqueeze(0)], dim=1)
+								if index.item() == eos_token_id:
+									completed.append((new_tokens, new_score))
+								else:
+									new_beams.append((new_tokens, new_score, new_tensor))
 
-					# Stop if no active beams remain
-					if not beams:
-						break
+						# Keep the top num_beams beams
+						new_beams = sorted(new_beams, key=lambda x: x[1], reverse=True)[:n_beams]
+						beams = new_beams
 
-				# Add remaining beams to completed
-				completed.extend(beams)
+						# Stop if no active beams remain
+						if not beams:
+							break
 
-				# Select the highest-scoring sequence
-				best_sequence = max(completed, key=lambda x: x[1])[0]
-				text = self.decoder_tokenizer.decode(best_sequence, skip_special_tokens=True)
-				return [text]
+					# Add remaining beams to completed
+					completed.extend(beams)
+
+					# Select the highest-scoring sequence
+					best_sequence = max(completed, key=lambda x: x[1])[0]
+					text = self.decoder_tokenizer.decode(best_sequence, skip_special_tokens=True)
+					generated_texts.append(text.strip())
+
+				return generated_texts
 
 
 def train_DinoGpt(
