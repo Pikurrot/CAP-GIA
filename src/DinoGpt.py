@@ -6,6 +6,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from transformers import AutoModel, AutoImageProcessor, GPT2LMHeadModel, GPT2Tokenizer
 import evaluate
+from typing import Literal
 
 
 def contrastive_criterion(image_embeds, text_embeds, temperature=0.1):
@@ -60,7 +61,10 @@ class DinoGpt(nn.Module):
 			max_length: int=30,
 			repetition_penalty: float=1.2,
 			alpha: float=2.0, # Image embedding weight
-			lambda_contrastive: float=0.1
+			lambda_contrastive: float=0.1,
+			inference_mode: Literal["sampling", "beam_search"] = "sampling",
+			sampling_threshold: float=-1, # If -1, use multinomial
+			n_beams: int=5
 	):
 		device = next(self.parameters()).device
 
@@ -104,59 +108,125 @@ class DinoGpt(nn.Module):
 		else:
 			# Inference Mode
 			B = image_embeds.shape[0]
-
-			# Start each sequence with BOS token
 			bos_token_id = self.decoder_tokenizer.bos_token_id if self.decoder_tokenizer.bos_token_id is not None else self.decoder_tokenizer.eos_token_id
-			bos_tokens = torch.full((B, 1), bos_token_id, device=device)  # [B, 1]
-			generated = bos_tokens
-			done = torch.zeros(B, dtype=torch.bool, device=device)
+			eos_token_id = self.decoder_tokenizer.eos_token_id
 
-			past_tokens = None  # Keep track of generated tokens for applying repetition penalty
+			if inference_mode == "sampling":
+				# Sampling-based generation
+				bos_tokens = torch.full((B, 1), bos_token_id, device=device)  # [B, 1]
+				generated = bos_tokens
+				done = torch.zeros(B, dtype=torch.bool, device=device)
+				past_tokens = None  # Track past tokens for repetition penalty
 
-			for _ in range(max_length):
-				# Embed current tokens
-				text_embeds = self.decoder.transformer.wte(generated)  # [B, seq_len, n_embd]
-				
-				# Concatenate image embeddings at the front
-				combined_embeds = torch.cat([image_embeds.unsqueeze(1), text_embeds], dim=1)  # [B, 1+seq_len, n_embd]
+				for _ in range(max_length):
+					# Embed current tokens
+					text_embeds = self.decoder.transformer.wte(generated)  # [B, seq_len, n_embd]
+					
+					# Concatenate image embeddings at the front
+					combined_embeds = torch.cat([image_embeds.unsqueeze(1), text_embeds], dim=1)  # [B, 1+seq_len, n_embd]
 
-				# GPT forward
-				outputs = self.decoder(inputs_embeds=combined_embeds)
-				logits = outputs.logits[:, -1, :]  # [B, vocab_size]
+					# GPT forward
+					outputs = self.decoder(inputs_embeds=combined_embeds)
+					logits = outputs.logits[:, -1, :]  # [B, vocab_size]
 
-				# Apply repetition penalty to logits
-				if past_tokens is not None:
-					for batch_idx in range(B):
-						for token in past_tokens[batch_idx]:
-							logits[batch_idx, token] /= repetition_penalty
+					# Apply repetition penalty
+					if past_tokens is not None:
+						for batch_idx in range(B):
+							for token in past_tokens[batch_idx]:
+								logits[batch_idx, token] /= repetition_penalty
 
-				# Greedy next token
-				next_token = torch.argmax(logits, dim=-1, keepdim=True)  # [B, 1]
+					# Apply softmax to get probabilities
+					probs = torch.softmax(logits, dim=-1)
 
-				# Append next token to sequences
-				generated = torch.cat([generated, next_token], dim=1)  # [B, seq_len+1]
+					# Apply sampling threshold
+					if sampling_threshold > 0:
+						# Filter probabilities
+						sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+						cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+						mask = cumulative_probs <= sampling_threshold
+						mask[..., 1:] = mask[..., :-1].clone()
+						mask[..., 0] = True
+						probs *= mask
+						probs /= probs.sum(dim=-1, keepdim=True)  # Re-normalize
 
-				# Track tokens for repetition penalty
-				if past_tokens is None:
-					past_tokens = next_token
-				else:
-					past_tokens = torch.cat([past_tokens, next_token], dim=1)
+					# Sample next token
+					next_token = torch.multinomial(probs, num_samples=1)  # [B, 1]
 
-				# Check for EOS
-				eos_mask = (next_token.squeeze(-1) == self.decoder_tokenizer.eos_token_id)
-				done = done | eos_mask
-				if done.all():
-					break
+					# Append next token to sequences
+					generated = torch.cat([generated, next_token], dim=1)  # [B, seq_len+1]
 
-			# Decode the generated tokens for each sequence
-			generated_texts = []
-			for seq in generated:
-				if seq[0].item() == bos_token_id:
-					seq = seq[1:]
-				text = self.decoder_tokenizer.decode(seq, skip_special_tokens=True)
-				generated_texts.append(text.strip())
+					# Track tokens for repetition penalty
+					if past_tokens is None:
+						past_tokens = next_token
+					else:
+						past_tokens = torch.cat([past_tokens, next_token], dim=1)
 
-			return generated_texts
+					# Check for EOS
+					eos_mask = (next_token.squeeze(-1) == eos_token_id)
+					done = done | eos_mask
+					if done.all():
+						break
+
+				# Decode the generated tokens
+				generated_texts = []
+				for seq in generated:
+					if seq[0].item() == bos_token_id:
+						seq = seq[1:]
+					text = self.decoder_tokenizer.decode(seq, skip_special_tokens=True)
+					generated_texts.append(text.strip())
+				return generated_texts
+
+			elif inference_mode == "beam_search":
+				# Beam search generation
+				beams = [(bos_token_id, 0.0, torch.full((1, 1), bos_token_id, device=device))]  # List of (tokens, score, tensor)
+				completed = []
+
+				for _ in range(max_length):
+					new_beams = []
+					for tokens, score, tensor in beams:
+						# Embed current tokens
+						text_embeds = self.decoder.transformer.wte(tensor)  # [1, seq_len, n_embd]
+						
+						# Concatenate image embeddings at the front
+						combined_embeds = torch.cat([image_embeds[0].unsqueeze(0).unsqueeze(1), text_embeds], dim=1)  # [1, 1+seq_len, n_embd]
+
+						# GPT forward
+						outputs = self.decoder(inputs_embeds=combined_embeds)
+						logits = outputs.logits[:, -1, :]  # [1, vocab_size]
+
+						# Apply repetition penalty
+						for token in tokens:
+							logits[0, token] /= repetition_penalty
+
+						# Log probabilities
+						probs = torch.log_softmax(logits, dim=-1)
+
+						# Get top-k candidates
+						top_k_probs, top_k_indices = torch.topk(probs, n_beams, dim=-1)
+						for prob, index in zip(top_k_probs[0], top_k_indices[0]):
+							new_tokens = tokens + [index.item()]
+							new_score = score + prob.item()
+							new_tensor = torch.cat([tensor, index.unsqueeze(0).unsqueeze(0)], dim=1)
+							if index.item() == eos_token_id:
+								completed.append((new_tokens, new_score))
+							else:
+								new_beams.append((new_tokens, new_score, new_tensor))
+
+					# Keep the top num_beams beams
+					new_beams = sorted(new_beams, key=lambda x: x[1], reverse=True)[:n_beams]
+					beams = new_beams
+
+					# Stop if no active beams remain
+					if not beams:
+						break
+
+				# Add remaining beams to completed
+				completed.extend(beams)
+
+				# Select the highest-scoring sequence
+				best_sequence = max(completed, key=lambda x: x[1])[0]
+				text = self.decoder_tokenizer.decode(best_sequence, skip_special_tokens=True)
+				return [text]
 
 
 def train_DinoGpt(
