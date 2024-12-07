@@ -1,128 +1,152 @@
-# Install dependencies
-#
-# python -m venv venv
-# source ./venv/bin/activate # linux
-# call ./venv/scripts/Activate.bat  # windows?
-#
-# pip install transformers peft datasets
-#
-# Use the PyTorch instructions for your machine:
-# [Get started — PyTorch](https://pytorch.org/get-started/locally/)
-#
-import torch
+from torch.utils.data import DataLoader
 from transformers import AutoModelForVision2Seq, AutoProcessor
 from peft import LoraConfig, get_peft_model
-
-from datasets import load_dataset
-
-from torch.utils.data import DataLoader, Dataset
-
+import torch
 import torch.optim as optim
 
-model_id = "Salesforce/blip-image-captioning-base"
+import numpy as np
+import os 
+from PIL import Image
+import pandas as pd
+from torch.utils.data import Dataset
+from typing import Literal
+from torchvision import transforms
 
-# Set the device which works for you or use these defaults
+
+
+class ReceipesDataset(Dataset):
+	def __init__(
+			self,
+			data_path: str,
+			transform_image: bool = False,
+			split: Literal["train", "val", "test"] = "train",
+			split_size: list = [0.7, 0.1, 0.2],
+			data_size: int=1.0
+	):
+		super(ReceipesDataset, self).__init__()
+		self.img_path = os.path.join(data_path, 'FoodImages', 'Food Images')
+		self.cap_path = os.path.join(data_path, 'FoodIngredientsAndReceipesDatasetWithImageNameMapping.csv')
+		self.cap_data = pd.read_csv(self.cap_path)
+		self.transform_image = transform_image
+		self.split = split
+
+		# Clean data
+		self.cap_data = self.cap_data.dropna(subset=["Title"]) # TODO: Add other columns
+		self.cap_data = self.cap_data[self.cap_data["Title"].apply(lambda x: len(x.split()) > 0)]
+		self.cap_data = self.cap_data[self.cap_data["Image_Name"].apply(lambda x: x != "#NAME?")]
+
+		# Create vocabulary
+		# self.vocab = set()
+		# for caption in self.cap_data["Title"]: # TODO: Add other columns
+		# 	self.vocab.update(caption.split())
+		# self.special_tokens = ['<start>', '<end>', '<pad>', '<unk>']
+		# self.vocab.update(self.special_tokens)
+		# self.vocab = sorted(self.vocab)
+		# self.word2idx = {word: idx for idx, word in enumerate(self.vocab)}
+		# self.idx2word = {idx: word for word, idx in self.word2idx.items()}
+		# self.vocab_size = len(self.vocab)
+
+		# Split data
+		total_size = len(self.cap_data)
+		train_end = int(split_size[0] * total_size)
+		val_end = train_end + int(split_size[1] * total_size)
+
+		if split == "train":
+			self.cap_data = self.cap_data[:train_end]
+		elif split == "val":
+			self.cap_data = self.cap_data[train_end:val_end]
+		elif split == "test":
+			self.cap_data = self.cap_data[val_end:]
+
+		self.cap_data = self.cap_data.sample(frac=data_size, random_state=42)
+	
+	def __len__(self):
+		return len(self.cap_data)
+	
+	def verify_paths(self):
+		for idx in range(len(self)):
+			img_name = os.path.join(self.img_path, self.cap_data.iloc[idx, 4]) + ".jpg"
+			if not os.path.exists(img_name):
+				print(f"Image {img_name} does not exist.")
+	
+	def __getitem__(self, idx):
+		img_name = os.path.join(self.img_path, self.cap_data.iloc[idx, 4]) + ".jpg"
+		image = Image.open(img_name).convert('RGB')
+		image = np.array(image)[..., ::-1]
+		image = Image.fromarray(image)
+		if self.transform_image:
+			image = transform(image)
+		caption = self.cap_data.iloc[idx, 1]
+		return image, caption
+
+
+# Cargar el modelo BLIP
+model_id = "Salesforce/blip-image-captioning-base"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# loading the model in float16
 model = AutoModelForVision2Seq.from_pretrained(model_id)
 model.to(device)
 
-# Print the model to see the model architecture. PEFT works with Linear and Conv2D layers
-print(model)
-
 processor = AutoProcessor.from_pretrained(model_id)
 
+# Configuración PEFT
 config = LoraConfig(
     r=16,
     lora_alpha=32,
     lora_dropout=0.05,
     bias="none",
-    # target specific modules (look for Linear in the model)
-    # print(model) to see the architecture of the model
     target_modules=[
-        "self.query",
-        "self.key",
-        "self.value",
-        "output.dense",
-        "self_attn.qkv",
-        "self_attn.projection",
-        "mlp.fc1",
-        "mlp.fc2",
+        "self.query", "self.key", "self.value", 
+        "output.dense", "self_attn.qkv", 
+        "self_attn.projection", "mlp.fc1", "mlp.fc2"
     ],
 )
 
-# We layer our PEFT on top of our model using the PEFT config
 model = get_peft_model(model, config)
 model.print_trainable_parameters()
 
 
-# We are extracting the train dataset
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+])
 
+data_path = "/path/to/your/dataset"
+train_dataset = ReceipesDataset(data_path=data_path, transform_image=True, split="train")
 
-# Each dataset may have different names and format and this function should be
-# adjusted for each dataset. Creating `image` and `text` keys to correlate with
-# the collator
-class FootballImageCaptioningDataset(Dataset):
-    def __init__(self, dataset, processor):
-        self.dataset = dataset
-        self.processor = processor
-
-    def __len__(self):
-        return len(self.dataset)
-
-    def __getitem__(self, idx):
-        item = self.dataset[idx]
-        encoding = self.processor(
-            images=item["image"], padding="max_length", return_tensors="pt"
-        )
-        # remove batch dimension
-        encoding = {k: v.squeeze() for k, v in encoding.items()}
-        encoding["text"] = item["text"]
-        return encoding
-
-
+# Collate Function para BLIP
 def collator(batch):
-    # pad the input_ids and attention_mask
-    processed_batch = {}
-    for key in batch[0].keys():
-        if key != "text":
-            processed_batch[key] = torch.stack(
-                [example[key] for example in batch]
-            )
-            processed_batch[key].to(device)
-        else:
-            text_inputs = processor.tokenizer(
-                [example["text"] for example in batch],
-                padding=True,
-                return_tensors="pt",
-            )
-            processed_batch["input_ids"] = text_inputs["input_ids"]
-            processed_batch["attention_mask"] = text_inputs["attention_mask"]
-    return processed_batch
+    images, captions = zip(*batch)
+    # Procesar imágenes
+    image_inputs = processor(images=list(images), return_tensors="pt", padding=True)
+    # Procesar texto
+    text_inputs = processor.tokenizer(
+        list(captions), padding=True, return_tensors="pt"
+    )
+    # Combinar todo
+    return {
+        "pixel_values": image_inputs["pixel_values"].to(device),
+        "input_ids": text_inputs["input_ids"].to(device),
+        "attention_mask": text_inputs["attention_mask"].to(device),
+    }
 
-
-train_dataset = FootballImageCaptioningDataset(dataset, processor)
-
-# Set batch_size to the batch that works for you.
+# DataLoader
 train_dataloader = DataLoader(
-    train_dataset, shuffle=True, batch_size=2, collate_fn=collator
+    train_dataset, shuffle=True, batch_size=4, collate_fn=collator
 )
 
-# Setup AdamW
-optimizer = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+# Optimización
+optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
 
-
-# Set the model as ready for training, makes sure the gradient are on
+# Entrenamiento
 model.train()
 
-
-for epoch in range(50):
-    print("Epoch:", epoch)
+for epoch in range(10):  # Ajusta el número de épocas
+    print(f"Epoch {epoch + 1}")
     for idx, batch in enumerate(train_dataloader):
-        input_ids = batch.pop("input_ids").to(device)
-        pixel_values = batch.pop("pixel_values").to(device)
-        attention_mask = batch.pop("attention_mask").to(device)
+        input_ids = batch["input_ids"]
+        pixel_values = batch["pixel_values"]
+        attention_mask = batch["attention_mask"]
 
         outputs = model(
             input_ids=input_ids,
@@ -132,26 +156,18 @@ for epoch in range(50):
         )
 
         loss = outputs.loss
-
-        print("Loss:", loss.item())
+        print(f"Batch {idx}, Loss: {loss.item()}")
 
         loss.backward()
-
         optimizer.step()
         optimizer.zero_grad()
 
         if idx % 10 == 0:
+            # Generar texto de prueba
             generated_output = model.generate(
                 pixel_values=pixel_values, max_new_tokens=64
             )
-            print(
-                processor.batch_decode(
-                    generated_output, skip_special_tokens=True
-                )
-            )
+            print(processor.batch_decode(generated_output, skip_special_tokens=True))
 
-
-print("Saving to ./training/caption")
-
-# hugging face models saved to the directory
-model.save_pretrained("./training/caption")
+# Guardar el modelo
+model.save_pretrained("./training/recipes")
