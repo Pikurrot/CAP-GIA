@@ -37,7 +37,7 @@ class DinoGptVED(nn.Module):
 			self.decoder_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 		if self.decoder_tokenizer.eos_token is None:
 			self.decoder_tokenizer.add_special_tokens({'eos_token': '<|endoftext|>'})
-		self.VED.resize_token_embeddings(len(self.decoder_tokenizer))
+		self.VED.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
 		self.VED.config.decoder_start_token_id = self.decoder_tokenizer.cls_token_id
 		self.VED.config.pad_token_id = self.decoder_tokenizer.pad_token_id
 
