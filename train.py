@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from src.DinoGpt import DinoGpt, train_DinoGpt
 from src.DinoSmolLM import DinoSmolLM, train_DinoSmolLM
 from src.ViTGpt import ViTGpt, train_ViTGpt
+from src.DinoGptVED import DinoGptVED, train_DinoGptVED
 from src.DatasetCaption import ReceipesDataset, collate_fn_lst
 from datetime import datetime
 
@@ -62,6 +63,9 @@ def train(
 	elif model_name == "DINO-SmolLM":
 		model_class = DinoSmolLM
 		train_func = train_DinoSmolLM
+	elif model_name == "DINO-GPT-VED":
+		model_class = DinoGptVED
+		train_func = train_DinoGptVED
 	output_dir = kwargs["out_dir"]
 	model = model_class(
 		output_dir=output_dir
@@ -71,11 +75,17 @@ def train(
 	# Prepare the training configuration
 	print("Training model...")
 	optimizer_name = config["optimizer"]
-	optimizer = getattr(torch.optim, optimizer_name)(
-		[{"params": model.encoder.parameters(), "lr": config["lr"], "name": "encoder"},	
-		{"params": model.proj.parameters(), "lr": config["lr"], "name": "proj"},
-		{"params": model.decoder.parameters(), "lr": config["lr"], "name": "decoder"}],
-	)
+	if model_name.endswith("VED"):
+		optimizer = getattr(torch.optim, optimizer_name)(
+			model.parameters(),
+			lr=config["lr"]
+		)
+	else:
+		optimizer = getattr(torch.optim, optimizer_name)(
+			[{"params": model.encoder.parameters(), "lr": config["lr"], "name": "encoder"},	
+			{"params": model.proj.parameters(), "lr": config["lr"], "name": "proj"},
+			{"params": model.decoder.parameters(), "lr": config["lr"], "name": "decoder"}],
+		)
 	scheduler_conf = config["scheduler"]
 	if scheduler_conf is not None:
 		scheduler_name = scheduler_conf["name"]
