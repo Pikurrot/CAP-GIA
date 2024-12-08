@@ -304,13 +304,14 @@ def train_DinoGpt(
 						pred_tokens_seq = pred_tokens[i]
 
 						print(f"Example {i + 1}:\n")
+						print("Caption:", captions[i])
 						for j in range(1, len(target_tokens)):
-							if target_tokens[j] == -100:
+							if target_tokens[j+1] == -100:
 								continue
 
 							input_text = model.decoder_tokenizer.decode(input_tokens[:j], skip_special_tokens=False)
 							pred_token = model.decoder_tokenizer.decode([pred_tokens_seq[j]], skip_special_tokens=False)
-							target_token = model.decoder_tokenizer.decode([target_tokens[j]], skip_special_tokens=False)
+							target_token = model.decoder_tokenizer.decode([target_tokens[j+1]], skip_special_tokens=False)
 
 							print(f"{input_text} [{pred_token}] ({target_token})")
 
@@ -419,8 +420,9 @@ def train_DinoGpt(
 						pred_tokens_seq = pred_tokens[i]
 
 						print(f"Example {i + 1}:\n")
+						print("Caption:", captions[i])
 						for j in range(1, len(target_tokens)):
-							if target_tokens[j] == -100:
+							if target_tokens[j+1] == -100:
 								continue
 
 							input_text = model.decoder_tokenizer.decode(input_tokens[:j], skip_special_tokens=False)
