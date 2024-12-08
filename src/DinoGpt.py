@@ -12,7 +12,6 @@ from typing import Literal
 def contrastive_criterion(image_embeds, text_embeds, temperature=0.1):
 	# Normalize embeddings to unit vectors
 	image_embeds = F.normalize(image_embeds, p=2, dim=1)
-	text_embeds = text_embeds.mean(dim=1)
 	text_embeds = F.normalize(text_embeds, p=2, dim=1)
 
 	# Compute similarity matrix (batch_size x batch_size)
