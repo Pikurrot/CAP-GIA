@@ -77,7 +77,7 @@ transform = transforms.Compose(
 )
 
 # Configuración del modelo BLIP
-model_id = "/fhome/vlia01/CAP-GIA/blip/model_resources"
+model_id = "model_resources"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 model = AutoModelForVision2Seq.from_pretrained(model_id)
