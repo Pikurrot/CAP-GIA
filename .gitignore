@@ -169,3 +169,4 @@ out/
 temp.ipynb
 wandb
 data
+model_resources
