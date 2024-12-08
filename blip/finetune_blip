@@ -111,7 +111,7 @@ transform = transforms.Compose([
     transforms.ToTensor(),
 ])
 
-data_path = "/path/to/your/dataset"
+data_path = "/fhome/vlia01/caption_data/receipes"
 train_dataset = ReceipesDataset(data_path=data_path, transform_image=True, split="train")
 
 # Collate Function para BLIP
@@ -138,11 +138,25 @@ train_dataloader = DataLoader(
 # Optimización
 optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
 
-# Entrenamiento
+import wandb
+
+wandb.init(
+    project="blip-finetuning",
+    config={
+        "epochs": 10,
+        "batch_size": 4,
+        "learning_rate": 1e-4,
+    },
+)
+
+# Registrar configuración inicial en WandB
+config = wandb.config
 model.train()
 
-for epoch in range(10):  # Ajusta el número de épocas
+for epoch in range(config.epochs):  
     print(f"Epoch {epoch + 1}")
+    total_loss = 0  
+
     for idx, batch in enumerate(train_dataloader):
         input_ids = batch["input_ids"]
         pixel_values = batch["pixel_values"]
@@ -156,18 +170,44 @@ for epoch in range(10):  # Ajusta el número de épocas
         )
 
         loss = outputs.loss
+        total_loss += loss.item()
         print(f"Batch {idx}, Loss: {loss.item()}")
 
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
 
+        wandb.log({"batch_loss": loss.item(), "epoch": epoch + 1})
+
+        # Cada 10 batches, generar ejemplos y registrarlos
         if idx % 10 == 0:
-            # Generar texto de prueba
             generated_output = model.generate(
                 pixel_values=pixel_values, max_new_tokens=64
             )
-            print(processor.batch_decode(generated_output, skip_special_tokens=True))
+            generated_text = processor.batch_decode(
+                generated_output, skip_special_tokens=True
+            )
+            print(generated_text)
 
-# Guardar el modelo
+            # Registrar ejemplos generados en WandB
+            for i in range(len(generated_text)):
+                wandb.log({
+                    "generated_text": generated_text[i],
+                    "image": wandb.Image(pixel_values[i].cpu().numpy().transpose(1, 2, 0))
+                })
+
+    # Registrar la pérdida promedio de la época en WandB
+    avg_loss = total_loss / len(train_dataloader)
+    print(f"Epoch {epoch + 1} Average Loss: {avg_loss}")
+    wandb.log({"epoch_loss": avg_loss})
+
+# Guardar el modelo localmente
 model.save_pretrained("./training/recipes")
+
+# Subir el modelo a WandB como un artefacto
+artifact = wandb.Artifact("blip-finetuned-model", type="model")
+artifact.add_dir("./training/recipes")
+wandb.log_artifact(artifact)
+
+# Finalizar el experimento
+wandb.finish()
