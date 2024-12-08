@@ -305,7 +305,7 @@ def train_DinoGpt(
 
 						print(f"Example {i + 1}:\n")
 						print("Caption:", captions[i])
-						for j in range(1, len(target_tokens)):
+						for j in range(1, len(target_tokens)-1):
 							if target_tokens[j+1] == -100:
 								continue
 
@@ -421,7 +421,7 @@ def train_DinoGpt(
 
 						print(f"Example {i + 1}:\n")
 						print("Caption:", captions[i])
-						for j in range(1, len(target_tokens)):
+						for j in range(1, len(target_tokens)-1):
 							if target_tokens[j+1] == -100:
 								continue
 
