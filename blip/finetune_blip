@@ -230,8 +230,8 @@ for epoch in range(config.epochs):
     model.train()
 
 # Guardar modelo
-os.makedirs("./training/recipes", exist_ok=True)
-model.save_pretrained("./training/recipes")
+os.makedirs("/fhome/vlia01/CAP-GIA/blip", exist_ok=True)
+model.save_pretrained("/fhome/vlia01/CAP-GIA/blip")
 artifact = wandb.Artifact("blip-finetuned-model", type="model")
 artifact.add_dir("./training/recipes")
 wandb.log_artifact(artifact)
