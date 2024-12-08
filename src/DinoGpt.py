@@ -50,9 +50,11 @@ class DinoGpt(nn.Module):
 		# Load GPT-2 model
 		self.decoder = GPT2LMHeadModel.from_pretrained("gpt2", cache_dir=output_dir)
 		self.decoder_tokenizer = GPT2Tokenizer.from_pretrained("gpt2", cache_dir=output_dir)
+		if self.decoder_tokenizer.bos_token is None:
+			self.decoder_tokenizer.add_special_tokens({'bos_token': '<|startoftext|>'})
 		if self.decoder_tokenizer.pad_token is None:
 			self.decoder_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-			self.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
+		self.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
 
 		# Project image embedding to GPT-2 embedding dimension
 		self.proj = nn.Sequential(
@@ -78,8 +80,6 @@ class DinoGpt(nn.Module):
 		# Encode images with DINO
 		pixel_values = self.encoder_processor(images, return_tensors="pt").pixel_values.to(device)
 		dino_outputs = self.encoder(pixel_values=pixel_values)
-		
-		# Average pool the output of the last layer
 		image_embeds = dino_outputs.last_hidden_state.mean(dim=1)  # [B, hidden_size]
 
 		# Project to GPT embedding size
@@ -89,6 +89,7 @@ class DinoGpt(nn.Module):
 		if captions is not None:
 			# Training/Validation Mode
 			# Tokenize captions
+			captions = [self.decoder_tokenizer.bos_token + " " + cap for cap in captions]
 			encodings = self.decoder_tokenizer(captions, return_tensors='pt', padding=True, truncation=True)
 			input_ids = encodings.input_ids.to(device)  # [B, L]
 			attention_mask = encodings.attention_mask.to(device)
@@ -99,10 +100,24 @@ class DinoGpt(nn.Module):
 
 			# Adjust labels to match outputs
 			labels = input_ids.clone()
-			labels = torch.cat([torch.full((labels.size(0), 1), -100, device=device), labels], dim=1)
+			labels = torch.cat([
+				torch.full((labels.size(0), 1), -100, device=device),
+				labels
+			], dim=1) # [B, 1+L]
+
+			# Mask out padding
+			full_attention_mask = torch.cat([
+				torch.ones((attention_mask.size(0), 1), device=device),
+				attention_mask
+			], dim=1)
+			labels[full_attention_mask == 0] = -100
 
 			# Pass through GPT2
-			outputs = self.decoder(inputs_embeds=inputs_embeds, attention_mask=torch.cat([torch.ones_like(attention_mask[:, :1]), attention_mask], dim=1), labels=labels)
+			outputs = self.decoder(
+				inputs_embeds=inputs_embeds,
+				attention_mask=full_attention_mask,
+				labels=labels
+			)
 
 			# Compute loss
 			image_latent = F.normalize(image_embeds, p=2, dim=1) # Normalize to unit length
@@ -280,16 +295,16 @@ def train_DinoGpt(
 					print("\nTeacher Forcing Examples:\n")
 
 					for i in range(min(k_examples, input_ids.size(0))):
-						input_tokens = input_ids[i] # [seq_len+1]
-						target_tokens = labels[i] # [seq_len+1]
-						pred_tokens_seq = pred_tokens[i] # [seq_len+1]
+						input_tokens = input_ids[i] # (BOS + caption)
+						target_tokens = labels[i] # (IMG + BOS + caption)
+						pred_tokens_seq = pred_tokens[i]
 
 						print(f"Example {i + 1}:\n")
-						for j in range(len(target_tokens)):
+						for j in range(1, len(target_tokens)):
 							if target_tokens[j] == -100:
 								continue
 
-							input_text = model.decoder_tokenizer.decode(input_tokens[:j + 1], skip_special_tokens=False)
+							input_text = model.decoder_tokenizer.decode(input_tokens[:j], skip_special_tokens=False)
 							pred_token = model.decoder_tokenizer.decode([pred_tokens_seq[j]], skip_special_tokens=False)
 							target_token = model.decoder_tokenizer.decode([target_tokens[j]], skip_special_tokens=False)
 
