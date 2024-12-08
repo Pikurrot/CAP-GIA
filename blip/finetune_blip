@@ -9,7 +9,7 @@ from torchvision import transforms
 from transformers import AutoModelForVision2Seq, AutoProcessor
 from peft import LoraConfig, get_peft_model
 import wandb
-from datasets import load_metric
+from evaluate import load as load_metric
 from typing import Literal
 
 
