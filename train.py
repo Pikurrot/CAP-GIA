@@ -22,10 +22,13 @@ def train(
 	datetime_str = datetime.now().strftime("%d-%m_%H:%M:%S")
 	save_name = f"{model_name}_{datetime_str}"
 	if log_wandb:
+		# join config with kwargs
+		wandb_config = {**config, **kwargs}
+		[wandb_config.pop(k) for k in ["out_dir", "data_dir", "gpu"]]
 		wandb.init(
 			project="CAP-GIA",
 			name=save_name,
-			config=config
+			config=wandb_config
 		)
 	device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 	print(f"Device: {device}")
@@ -69,9 +72,9 @@ def train(
 	print("Training model...")
 	optimizer_name = config["optimizer"]
 	optimizer = getattr(torch.optim, optimizer_name)(
-		[{"params": model.encoder.parameters(), "lr": config["lr"]},
-		{"params": model.proj.parameters(), "lr": config["lr"]},
-		{"params": model.decoder.parameters(), "lr": config["lr"]},]
+		[{"params": model.encoder.parameters(), "lr": config["lr"], "name": "encoder"},	
+		{"params": model.proj.parameters(), "lr": config["lr"], "name": "proj"},
+		{"params": model.decoder.parameters(), "lr": config["lr"], "name": "decoder"}],
 	)
 	scheduler_conf = config["scheduler"]
 	if scheduler_conf is not None:
@@ -90,19 +93,17 @@ def train(
 		val_loader=val_loader,
 		optimizer=optimizer,
 		scheduler=scheduler,
-		device=device,
 		num_epochs=config["epochs"],
 		log_wandb=log_wandb
 	)
 
 	# Save the model
-	if not os.path.exists(output_dir):
-		os.makedirs(output_dir)
-	save_path = os.path.join(output_dir, f"{save_name}.pt")
-	print(f"Saving model to {save_path}")
-	torch.save(model.state_dict(), save_path)
-	# if log_wandb:
-	# 	wandb.save(save_path)
+	if kwargs["data_size"] == 1.0:
+		if not os.path.exists(output_dir):
+			os.makedirs(output_dir)
+		save_path = os.path.join(output_dir, f"{save_name}.pt")
+		print(f"Saving model to {save_path}")
+		torch.save(model.state_dict(), save_path)
 
 	# Finish
 	print("Done!")

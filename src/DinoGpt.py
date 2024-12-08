@@ -12,7 +12,6 @@ from typing import Literal
 def contrastive_criterion(image_embeds, text_embeds, temperature=0.1):
 	# Normalize embeddings to unit vectors
 	image_embeds = F.normalize(image_embeds, p=2, dim=1)
-	text_embeds = text_embeds.mean(dim=1)
 	text_embeds = F.normalize(text_embeds, p=2, dim=1)
 
 	# Compute similarity matrix (batch_size x batch_size)
@@ -24,6 +23,14 @@ def contrastive_criterion(image_embeds, text_embeds, temperature=0.1):
 	# Compute cross-entropy loss
 	loss = F.cross_entropy(logits, targets)
 	return loss
+
+
+def distinct_ngrams(predictions, n=1):
+	ngrams = set()
+	for pred in predictions:
+		tokens = pred.split()
+		ngrams.update(zip(*[tokens[i:] for i in range(n)]))
+	return len(ngrams) / sum(len(pred.split()) for pred in predictions)
 
 
 class DinoGpt(nn.Module):
@@ -83,7 +90,7 @@ class DinoGpt(nn.Module):
 			# Training/Validation Mode
 			# Tokenize captions
 			encodings = self.decoder_tokenizer(captions, return_tensors='pt', padding=True, truncation=True)
-			input_ids = encodings.input_ids.to(device)    # [B, L]
+			input_ids = encodings.input_ids.to(device)  # [B, L]
 			attention_mask = encodings.attention_mask.to(device)
 
 			# Create inputs_embeds by concatenating image_embeds as a prefix
@@ -99,11 +106,13 @@ class DinoGpt(nn.Module):
 
 			# Compute loss
 			image_latent = F.normalize(image_embeds, p=2, dim=1) # Normalize to unit length
-			text_latent = F.normalize(text_embeds, p=2, dim=1)
+			text_latent = F.normalize(text_embeds.mean(dim=1), p=2, dim=1)
 			cross_entropy_loss = outputs.loss
 			contrastive_loss = contrastive_criterion(image_latent, text_latent)
 			total_loss = cross_entropy_loss + lambda_contrastive * contrastive_loss
-			return total_loss
+			with torch.no_grad():
+				cos_sim = F.cosine_similarity(image_latent, text_latent, dim=1).mean().item()
+			return total_loss, cross_entropy_loss, contrastive_loss, cos_sim, input_ids, labels, outputs.logits
 
 		else:
 			# Inference Mode
@@ -241,9 +250,9 @@ def train_DinoGpt(
 		val_loader: DataLoader,
 		optimizer: torch.optim.Optimizer,
 		scheduler: torch.optim.lr_scheduler._LRScheduler,
-		device: torch.device,
 		num_epochs: int,
-		log_wandb: bool = True
+		log_wandb: bool = True,
+		k_examples: int = 5
 ):
 	# Evaluation Metrics
 	bleu = evaluate.load("bleu")
@@ -251,12 +260,12 @@ def train_DinoGpt(
 	rouge = evaluate.load("rouge")
 
 	for epoch in range(num_epochs):
-		# Training Phase
+		# ---------------- Training Phase ----------------
 		model.train()
 		train_loss = 0
-		for images, captions in train_loader:		
+		for b, (images, captions) in enumerate(train_loader):		
 			# Forward pass
-			loss = model(images, captions)
+			loss, cross_entropy_loss, contrastive_loss, cos_sim, input_ids, labels, logits = model(images, captions)
 			train_loss += loss.item()
 			
 			optimizer.zero_grad()
@@ -264,53 +273,195 @@ def train_DinoGpt(
 			torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 			optimizer.step()
 			
-			if log_wandb:
-				wandb.log({"train_batch_loss": loss.item()})
-			print(f"Batch Loss: {loss.item():.4f}")
-		
-		# Validation Phase
-		model.eval()
-		val_loss = 0
-		predictions, references = [], []
-		with torch.no_grad():
-			for images, captions in val_loader:			
-				# Compute loss
-				loss = model(images, captions)
-				val_loss += loss.item()
-				
-				# Generate captions
-				pred_captions = model(images, captions=None)
-				predictions.extend(pred_captions)
-				references.extend(captions)
-		
-		# Scheduler Step
+			with torch.no_grad():
+				pred_tokens = torch.argmax(logits, dim=-1) # [B, seq_len+1]
+				if b == len(train_loader) - 1:
+					print("-" * 50)
+					print("\nTeacher Forcing Examples:\n")
+
+					for i in range(min(k_examples, input_ids.size(0))):
+						input_tokens = input_ids[i] # [seq_len+1]
+						target_tokens = labels[i] # [seq_len+1]
+						pred_tokens_seq = pred_tokens[i] # [seq_len+1]
+
+						print(f"Example {i + 1}:\n")
+						for j in range(len(target_tokens)):
+							if target_tokens[j] == -100:
+								continue
+
+							input_text = model.decoder_tokenizer.decode(input_tokens[:j + 1], skip_special_tokens=False)
+							pred_token = model.decoder_tokenizer.decode([pred_tokens_seq[j]], skip_special_tokens=False)
+							target_token = model.decoder_tokenizer.decode([target_tokens[j]], skip_special_tokens=False)
+
+							print(f"{input_text} [{pred_token}] ({target_token})")
+
+						print("\n")
+					print("-" * 50)
+
+				print(f"Batch Loss: {loss.item():.4f}\t{b+1}/{len(train_loader)}")
+
+				if log_wandb:
+					# Log loss
+					wandb.log({"train_batch_loss": loss.item()})
+					wandb.log({"train_batch_loss(cross_entropy)": cross_entropy_loss.item()})
+					wandb.log({"train_batch_loss(contrastive)": contrastive_loss.item()})
+
+					# Log gradient magnitudes
+					encoder_grad_norms = []
+					proj_grad_norms = []
+					decoder_grad_norms = []
+
+					for name, param in model.named_parameters():
+						if param.grad is not None:
+							if "encoder" in name:
+								encoder_grad_norms.append(param.grad.norm().item())
+							elif "proj" in name:
+								proj_grad_norms.append(param.grad.norm().item())
+							elif "decoder" in name:
+								decoder_grad_norms.append(param.grad.norm().item())
+
+					if encoder_grad_norms:
+						wandb.log({"grad_norm/encoder": sum(encoder_grad_norms) / len(encoder_grad_norms)})
+					if proj_grad_norms:
+						wandb.log({"grad_norm/proj": sum(proj_grad_norms) / len(proj_grad_norms)})
+					if decoder_grad_norms:
+						wandb.log({"grad_norm/decoder": sum(decoder_grad_norms) / len(decoder_grad_norms)})
+
+					# Log learning rate
+					for param_group in optimizer.param_groups:
+						wandb.log({f"learning_rate/{param_group['name']}": param_group['lr']})
+
+					# Log cosine similarity
+					wandb.log({"image-text_cosine_sim": cos_sim})
+
+					# Log token-level accuracy
+					mask = labels != -100
+					correct = (pred_tokens[mask] == labels[mask]).sum().item()
+					total = mask.sum().item()
+					token_accuracy = correct / total if total > 0 else 0.0
+					wandb.log({"token_accuracy": token_accuracy})
+
 		if scheduler:
 			scheduler.step()
 
+		# Evaluate training
+		print("Evaluating training set...")
+		model.eval()
+		train_preds, train_gt = [], []
+		with torch.no_grad():
+			for images, captions in train_loader:			
+				# Generate captions
+				pred_captions = model(images, captions=None)
+				train_preds.extend(pred_captions)
+				train_gt.extend(captions)
+		
+		# Log distinct n-grams
+		if log_wandb:
+			wandb.log({"distinct_1-grams": distinct_ngrams(train_preds, n=1)})
+			wandb.log({"distinct_2-grams": distinct_ngrams(train_preds, n=2)})
+
 		# Print some random examples
-		print()
-		for i in np.random.randint(0, len(predictions), 5):
-			print(f"Prediction: {predictions[i]}")
-			print(f"Reference: {references[i]}")
-			print()
-		
+		print("-"*50)
+		print("\nTraining Examples:\n")
+		for i in np.random.randint(0, len(train_preds), k_examples):
+			print(f"Prediction: {train_preds[i]}")
+			print(f"Groud Truth: {train_gt[i]}")
+			print("\n")
+		print("-"*50)
+
 		# Compute Metrics
-		res_bleu_1 = bleu.compute(predictions=predictions, references=[[ref] for ref in references], max_order=1)
-		res_bleu_2 = bleu.compute(predictions=predictions, references=[[ref] for ref in references], max_order=2)
-		res_meteor = meteor.compute(predictions=predictions, references=[[ref] for ref in references])
-		res_rouge = rouge.compute(predictions=predictions, references=[[ref] for ref in references])
-		
+		train_bleu_1 = bleu.compute(predictions=train_preds, references=[[ref] for ref in train_gt], max_order=1)
+		train_bleu_2 = bleu.compute(predictions=train_preds, references=[[ref] for ref in train_gt], max_order=2)
+		train_meteor = meteor.compute(predictions=train_preds, references=[[ref] for ref in train_gt])
+		train_rouge = rouge.compute(predictions=train_preds, references=[[ref] for ref in train_gt])
+
+		# ---------------- Validation Phase ----------------
+		print("Evaluating validation set...")
+		model.eval()
+		val_loss, val_ce_loss, val_con_loss, val_cos_sim, val_token_acc = 0, 0, 0, 0, 0
+		val_preds, val_gt = [], []
+		with torch.no_grad():
+			for b, (images, captions) in enumerate(val_loader):			
+				# Forward pass
+				loss, cross_entropy_loss, contrastive_loss, cos_sim, input_ids, labels, logits = model(images, captions)
+				val_loss += loss.item()
+				val_ce_loss += cross_entropy_loss.item()
+				val_con_loss += contrastive_loss.item()
+				val_cos_sim += cos_sim
+
+				pred_tokens = torch.argmax(logits, dim=-1) # [B, seq_len+1]
+				if b == len(val_loader) - 1:
+					print("-" * 50)
+					print("\nTeacher Forcing Examples:\n")
+
+					for i in range(min(k_examples, input_ids.size(0))):
+						input_tokens = input_ids[i] # [seq_len+1]
+						target_tokens = labels[i] # [seq_len+1]
+						pred_tokens_seq = pred_tokens[i] # [seq_len+1]
+
+						print(f"Example {i + 1}:\n")
+						for j in range(len(target_tokens)):
+							if target_tokens[j] == -100:
+								continue
+
+							input_text = model.decoder_tokenizer.decode(input_tokens[:j + 1], skip_special_tokens=False)
+							pred_token = model.decoder_tokenizer.decode([pred_tokens_seq[j]], skip_special_tokens=False)
+							target_token = model.decoder_tokenizer.decode([target_tokens[j]], skip_special_tokens=False)
+
+							print(f"{input_text} [{pred_token}] ({target_token})")
+
+						print("\n")
+					print("-" * 50)
+
+				# token-level accuracy
+				mask = labels != -100
+				correct = (pred_tokens[mask] == labels[mask]).sum().item()
+				total = mask.sum().item()
+				val_token_acc += correct / total if total > 0 else 0.0
+				
+				# Generate captions
+				pred_captions = model(images, captions=None)
+				val_preds.extend(pred_captions)
+				val_gt.extend(captions)
+
+		# Print some random examples
+		print("-"*50)
+		print("\nValidation Examples:\n")
+		for i in np.random.randint(0, len(val_preds), k_examples):
+			print(f"Prediction: {val_preds[i]}")
+			print(f"Groud Truth: {val_gt[i]}")
+			print("\n")
+		print("-"*50)
+
+		# Compute Metrics
+		val_bleu_1 = bleu.compute(predictions=val_preds, references=[[ref] for ref in val_gt], max_order=1)
+		val_bleu_2 = bleu.compute(predictions=val_preds, references=[[ref] for ref in val_gt], max_order=2)
+		val_meteor = meteor.compute(predictions=val_preds, references=[[ref] for ref in val_gt])
+		val_rouge = rouge.compute(predictions=val_preds, references=[[ref] for ref in val_gt])
+
 		# Log Metrics
 		avg_train_loss = train_loss / len(train_loader)
 		avg_val_loss = val_loss / len(val_loader)
-		
+		avg_val_ce_loss = val_ce_loss / len(val_loader)
+		avg_val_con_loss = val_con_loss / len(val_loader)
+		avg_val_cos_sim = val_cos_sim / len(val_loader)
+		avg_val_token_acc = val_token_acc / len(val_loader)
+
 		print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
 		if log_wandb:
 			wandb.log({
 				"epoch_train_loss": avg_train_loss,
 				"epoch_val_loss": avg_val_loss,
-				"BLEU-1": res_bleu_1["bleu"],
-				"BLEU-2": res_bleu_2["bleu"],
-				"ROUGE-L": res_rouge["rougeL"],
-				"METEOR": res_meteor["meteor"],
+				"epoch_val_loss(cross_entropy)": avg_val_ce_loss,
+				"epoch_val_loss(contrastive)": avg_val_con_loss,
+				"epoch_val_cosine_sim": avg_val_cos_sim,
+				"epoch_val_token_acc": avg_val_token_acc,
+				"BLEU-1": val_bleu_1["bleu"],
+				"BLEU-2": val_bleu_2["bleu"],
+				"ROUGE-L": val_rouge["rougeL"],
+				"METEOR": val_meteor["meteor"],
+				"train_BLEU-1": train_bleu_1["bleu"],
+				"train_BLEU-2": train_bleu_2["bleu"],
+				"train_ROUGE-L": train_rouge["rougeL"],
+				"train_METEOR": train_meteor["meteor"]
 			})
