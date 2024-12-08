@@ -72,7 +72,7 @@ class DinoGpt(nn.Module):
 			max_length: int=30,
 			repetition_penalty: float=1.2,
 			alpha: float=2.0, # Image embedding weight
-			lambda_contrastive: float=1.0, # Contrastive loss weight
+			lambda_contrastive: float=10.0, # Contrastive loss weight
 			inference_mode: Literal["sampling", "beam_search"] = "sampling",
 			sampling_threshold: float=-1, # If -1, use multinomial
 			n_beams: int=5
