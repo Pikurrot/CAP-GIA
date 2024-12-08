@@ -107,7 +107,7 @@ class DinoGpt(nn.Module):
 
 			# Compute loss
 			image_latent = F.normalize(image_embeds, p=2, dim=1) # Normalize to unit length
-			text_latent = F.normalize(text_embeds, p=2, dim=1)
+			text_latent = F.normalize(text_embeds.mean(dim=1), p=2, dim=1)
 			cross_entropy_loss = outputs.loss
 			contrastive_loss = contrastive_criterion(image_latent, text_latent)
 			total_loss = cross_entropy_loss + lambda_contrastive * contrastive_loss
