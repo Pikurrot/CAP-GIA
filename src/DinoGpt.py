@@ -54,6 +54,8 @@ class DinoGpt(nn.Module):
 			self.decoder_tokenizer.add_special_tokens({'bos_token': '<|startoftext|>'})
 		if self.decoder_tokenizer.pad_token is None:
 			self.decoder_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+		if self.decoder_tokenizer.eos_token is None:
+			self.decoder_tokenizer.add_special_tokens({'eos_token': '<|endoftext|>'})
 		self.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
 
 		# Project image embedding to GPT-2 embedding dimension
@@ -89,7 +91,9 @@ class DinoGpt(nn.Module):
 		if captions is not None:
 			# Training/Validation Mode
 			# Tokenize captions
-			captions = [self.decoder_tokenizer.bos_token + " " + cap for cap in captions]
+			bos_token = self.decoder_tokenizer.bos_token
+			eos_token = self.decoder_tokenizer.eos_token
+			captions = [bos_token + " " + cap.strip() + " " + eos_token for cap in captions]
 			encodings = self.decoder_tokenizer(captions, return_tensors='pt', padding=True, truncation=True)
 			input_ids = encodings.input_ids.to(device)  # [B, L]
 			attention_mask = encodings.attention_mask.to(device)
@@ -410,18 +414,18 @@ def train_DinoGpt(
 					print("\nTeacher Forcing Examples:\n")
 
 					for i in range(min(k_examples, input_ids.size(0))):
-						input_tokens = input_ids[i] # [seq_len+1]
-						target_tokens = labels[i] # [seq_len+1]
-						pred_tokens_seq = pred_tokens[i] # [seq_len+1]
+						input_tokens = input_ids[i] # (BOS + caption)
+						target_tokens = labels[i] # (IMG + BOS + caption)
+						pred_tokens_seq = pred_tokens[i]
 
 						print(f"Example {i + 1}:\n")
-						for j in range(len(target_tokens)):
+						for j in range(1, len(target_tokens)):
 							if target_tokens[j] == -100:
 								continue
 
-							input_text = model.decoder_tokenizer.decode(input_tokens[:j + 1], skip_special_tokens=False)
+							input_text = model.decoder_tokenizer.decode(input_tokens[:j], skip_special_tokens=False)
 							pred_token = model.decoder_tokenizer.decode([pred_tokens_seq[j]], skip_special_tokens=False)
-							target_token = model.decoder_tokenizer.decode([target_tokens[j]], skip_special_tokens=False)
+							target_token = model.decoder_tokenizer.decode([target_tokens[j+1]], skip_special_tokens=False)
 
 							print(f"{input_text} [{pred_token}] ({target_token})")
 
