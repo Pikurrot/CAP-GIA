@@ -39,7 +39,11 @@ class DinoGptVED(nn.Module):
 			self.decoder_tokenizer.add_special_tokens({'eos_token': '<|endoftext|>'})
 		self.VED.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
 		self.VED.config.decoder_start_token_id = self.decoder_tokenizer.bos_token_id
-		self.VED.config.pad_token_id = self.decoder_tokenizer.pad_token_id
+		if self.decoder_tokenizer.pad_token_id is not None:
+			self.VED.config.pad_token_id = self.decoder_tokenizer.pad_token_id
+		else:
+			print("Warning: GPT-2 tokenizer does not have a pad token. Using the eos token as pad token.")
+			self.VED.config.pad_token_id = self.decoder_tokenizer.eos_token_id
 
 	def forward(
 			self,
@@ -125,21 +129,21 @@ def train_DinoGptVED(
 			torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 			optimizer.step()
 
-		with torch.no_grad():
-			print(f"Batch Loss: {loss.item():.4f}\t{b+1}/{len(train_loader)}")
-			if log_wandb:
-				# Log loss
-				wandb.log({"train_batch_loss": loss.item()})
+			with torch.no_grad():
+				print(f"Batch Loss: {loss.item():.4f}\t{b+1}/{len(train_loader)}")
+				if log_wandb:
+					# Log loss
+					wandb.log({"train_batch_loss": loss.item()})
 
-				# Log gradient magnitudes
-				grad_norms = []
-				for p in model.parameters():
-					if p.grad is not None:
-						grad_norms.append(p.grad.norm().item())
-				wandb.log({"grad_norm": np.mean(grad_norms)})
+					# Log gradient magnitudes
+					grad_norms = []
+					for p in model.parameters():
+						if p.grad is not None:
+							grad_norms.append(p.grad.norm().item())
+					wandb.log({"grad_norm": np.mean(grad_norms)})
 
-				# Log learning rate
-				wandb.log({"learning_rate": optimizer.param_groups[0]["lr"]})
+					# Log learning rate
+					wandb.log({"learning_rate": optimizer.param_groups[0]["lr"]})
 
 		if scheduler:
 			scheduler.step()
