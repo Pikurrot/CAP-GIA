@@ -37,13 +37,12 @@ class DinoGptVED(nn.Module):
 			self.decoder_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 		if self.decoder_tokenizer.eos_token is None:
 			self.decoder_tokenizer.add_special_tokens({'eos_token': '<|endoftext|>'})
-		self.VED.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
+
+		self.VED.config.bos_token_id = self.decoder_tokenizer.bos_token_id
+		self.VED.config.pad_token_id = self.decoder_tokenizer.pad_token_id
+		self.VED.config.eos_token_id = self.decoder_tokenizer.eos_token_id
 		self.VED.config.decoder_start_token_id = self.decoder_tokenizer.bos_token_id
-		if self.decoder_tokenizer.pad_token_id is not None:
-			self.VED.config.pad_token_id = self.decoder_tokenizer.pad_token_id
-		else:
-			print("Warning: GPT-2 tokenizer does not have a pad token. Using the eos token as pad token.")
-			self.VED.config.pad_token_id = self.decoder_tokenizer.eos_token_id
+		self.VED.decoder.resize_token_embeddings(len(self.decoder_tokenizer))
 
 	def forward(
 			self,
@@ -86,15 +85,20 @@ class DinoGptVED(nn.Module):
 				max_length=max_length,
 				temperature=temperature,
 				repetition_penalty=repetition_penalty,
-				length_penalty=length_penalty,
+				length_penalty=length_penalty if n_beams > 1 else None,
 				do_sample=inference_mode == "sampling",
 				num_beams=n_beams if inference_mode == "beam_search" else 1,
 				top_k=top_k,
-				top_p=top_p
+				top_p=top_p,
+				pad_token_id=self.decoder_tokenizer.pad_token_id,
+				eos_token_id=self.decoder_tokenizer.eos_token_id,
 			)
+			encodings = self.decoder_tokenizer([""], return_tensors='pt')  # Empty input or BOS
+			attention_mask = encodings.attention_mask.to(device)
 			outputs = self.VED.generate(
 				pixel_values,
-				generation_config=generation_config
+				generation_config=generation_config,
+				attention_mask=attention_mask
 			)
 			generated_texts = self.decoder_tokenizer.batch_decode(outputs, skip_special_tokens=True)
 			return generated_texts
