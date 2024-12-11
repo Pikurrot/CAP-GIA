@@ -28,6 +28,8 @@ class DinoGptVED(nn.Module):
 		self.VED = VisionEncoderDecoderModel.from_encoder_decoder_pretrained(
 			"facebook/dinov2-small", "gpt2", cache_dir=output_dir
 		)
+		self.VED.config.is_encoder_decoder = True
+		self.VED.decoder.config.is_encoder_decoder = True
 		self.encoder_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-small", cache_dir=output_dir)
 		self.decoder_tokenizer = GPT2TokenizerFast.from_pretrained("gpt2", cache_dir=output_dir)
 		
