@@ -32,7 +32,7 @@ def explode_caption_lst(
 		col2: list
 ):
 	df = pd.DataFrame({"image": col1, "caption": col2})
-	res_df = explode_caption_lst(df)
+	res_df = explode_caption_df(df)
 	res_col1 = res_df["image"].tolist()
 	res_col2 = res_df["caption"].tolist()
 	return res_col1, res_col2
