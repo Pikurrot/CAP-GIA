@@ -44,7 +44,8 @@ class FlickrDataset(Dataset):
 			transform_image: bool = False,
 			split: Literal["train", "val", "test"] = "train",
 			split_size: list = [0.7, 0.1, 0.2],
-			data_size: int=1.0
+			data_size: int=1.0,
+			return_img_path: bool = False
 	):
 		super(FlickrDataset, self).__init__()
 		self.img_path = os.path.join(data_path, 'Images')
@@ -52,6 +53,7 @@ class FlickrDataset(Dataset):
 		self.cap_data = pd.read_csv(self.cap_path)
 		self.transform_image = transform_image
 		self.split = split
+		self.return_img_path = return_img_path
 
 		# Create vocabulary
 		# self.vocab = set()
@@ -92,6 +94,8 @@ class FlickrDataset(Dataset):
 		if self.transform_image:
 			image = transform(image)
 		caption = self.cap_data.iloc[idx, 1]
+		if self.return_img_path:
+			return image, caption, img_name
 		return image, caption
 
 
@@ -102,7 +106,8 @@ class ReceipesDataset(Dataset):
 			transform_image: bool = False,
 			split: Literal["train", "val", "test"] = "train",
 			split_size: list = [0.7, 0.1, 0.2],
-			data_size: int=1.0
+			data_size: int=1.0,
+			return_img_path: bool = False
 	):
 		super(ReceipesDataset, self).__init__()
 		self.img_path = os.path.join(data_path, 'FoodImages', 'Food Images')
@@ -110,6 +115,7 @@ class ReceipesDataset(Dataset):
 		self.cap_data = pd.read_csv(self.cap_path)
 		self.transform_image = transform_image
 		self.split = split
+		self.return_img_path = return_img_path
 
 		# Clean data
 		self.cap_data = self.cap_data.dropna(subset=["Title"]) # TODO: Add other columns
@@ -158,6 +164,8 @@ class ReceipesDataset(Dataset):
 		if self.transform_image:
 			image = transform(image)
 		caption = self.cap_data.iloc[idx, 1]
+		if self.return_img_path:
+			return image, caption, img_name
 		return image, caption
 
 
@@ -177,9 +185,9 @@ def collate_fn_tensor(batch, word2idx):
 
 
 def collate_fn_lst(batch):
-	# images come in PIL format
-	images, captions = zip(*batch)
-	return images, captions
+	unzipped_batch = list(zip(*batch))
+	collated_batch = tuple(list(elements) for elements in unzipped_batch)
+	return collated_batch
 
 
 if __name__ == '__main__':

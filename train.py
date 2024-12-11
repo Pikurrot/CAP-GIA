@@ -37,8 +37,8 @@ def train(
 	# Prepare the dataset
 	print("Preparing dataset...")
 	data_path = os.path.join(kwargs["data_dir"], "flickr8k")
-	train_set = FlickrDataset(data_path, split="train", data_size=kwargs["data_size"])
-	val_set = FlickrDataset(data_path, split="val", data_size=kwargs["data_size"])
+	train_set = FlickrDataset(data_path, split="train", data_size=kwargs["data_size"], return_img_path=True)
+	val_set = FlickrDataset(data_path, split="val", data_size=kwargs["data_size"], return_img_path=True)
 	train_loader = DataLoader(
 		train_set,
 		batch_size=config["batch_size"],
