@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from torch import nn
 from torch.utils.data import DataLoader
+from src.DatasetCaption import explode_caption_lst
 from transformers import AutoImageProcessor, VisionEncoderDecoderModel, GPT2TokenizerFast, GenerationConfig
 import evaluate
 from typing import Literal
@@ -178,10 +179,12 @@ def train_DinoGptVED(
 		print("-"*50)
 
 		# Compute Metrics
-		train_bleu_1 = bleu.compute(predictions=train_preds, references=[[ref] for ref in train_gt], max_order=1)
-		train_bleu_2 = bleu.compute(predictions=train_preds, references=[[ref] for ref in train_gt], max_order=2)
-		train_meteor = meteor.compute(predictions=train_preds, references=[[ref] for ref in train_gt])
-		train_rouge = rouge.compute(predictions=train_preds, references=[[ref] for ref in train_gt])
+		if not isinstance(train_gt[0], list):
+			train_gt = [[ref] for ref in train_gt]
+		train_bleu_1 = bleu.compute(predictions=train_preds, references=train_gt, max_order=1)
+		train_bleu_2 = bleu.compute(predictions=train_preds, references=train_gt, max_order=2)
+		train_meteor = meteor.compute(predictions=train_preds, references=train_gt)
+		train_rouge = rouge.compute(predictions=train_preds, references=train_gt)
 
 		# ---------------- Validation Phase ----------------
 		print("Evaluating validation set...")
@@ -189,9 +192,10 @@ def train_DinoGptVED(
 		val_loss = 0
 		val_preds, val_gt = [], []
 		with torch.no_grad():
-			for b, (images, captions) in enumerate(val_loader):			
+			for b, (images, captions) in enumerate(val_loader):		
 				# Forward pass
-				loss = model(images, captions)
+				images_exp, captions_exp = explode_caption_lst(images, captions)	
+				loss = model(images_exp, captions_exp)
 				val_loss += loss.item()
 
 				# Generate captions
@@ -209,10 +213,12 @@ def train_DinoGptVED(
 		print("-"*50)
 
 		# Compute Metrics
-		val_bleu_1 = bleu.compute(predictions=val_preds, references=[[ref] for ref in val_gt], max_order=1)
-		val_bleu_2 = bleu.compute(predictions=val_preds, references=[[ref] for ref in val_gt], max_order=2)
-		val_meteor = meteor.compute(predictions=val_preds, references=[[ref] for ref in val_gt])
-		val_rouge = rouge.compute(predictions=val_preds, references=[[ref] for ref in val_gt])
+		if not isinstance(val_gt[0], list):
+			val_gt = [[ref] for ref in val_gt]
+		val_bleu_1 = bleu.compute(predictions=val_preds, references=val_gt, max_order=1)
+		val_bleu_2 = bleu.compute(predictions=val_preds, references=val_gt, max_order=2)
+		val_meteor = meteor.compute(predictions=val_preds, references=val_gt)
+		val_rouge = rouge.compute(predictions=val_preds, references=val_gt)
 
 		# Log Metrics
 		avg_train_loss = train_loss / len(train_loader)

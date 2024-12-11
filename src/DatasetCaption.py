@@ -6,7 +6,7 @@ import cv2
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
-from typing import Literal
+from typing import Literal, Union
 
 transform = transforms.Compose([
 	transforms.Resize((224, 224)),
@@ -22,13 +22,29 @@ def destransform(image: torch.Tensor):
 	image = image[..., ::-1]
 	return image
 
+def explode_caption_df(
+		df: pd.DataFrame
+):
+	return df.explode("caption").reset_index(drop=True)
+
+def explode_caption_lst(
+		col1: list,
+		col2: list
+):
+	df = pd.DataFrame({"image": col1, "caption": col2})
+	res_df = explode_caption_lst(df)
+	res_col1 = res_df["image"].tolist()
+	res_col2 = res_df["caption"].tolist()
+	return res_col1, res_col2
+
 class FlickrDataset(Dataset):
 	def __init__(
 			self,
 			data_path: str,
 			transform_image: bool = False,
 			split: Literal["train", "val", "test"] = "train",
-			split_size: list = [0.7, 0.1, 0.2]
+			split_size: list = [0.7, 0.1, 0.2],
+			data_size: int=1.0
 	):
 		super(FlickrDataset, self).__init__()
 		self.img_path = os.path.join(data_path, 'Images')
@@ -38,15 +54,15 @@ class FlickrDataset(Dataset):
 		self.split = split
 
 		# Create vocabulary
-		self.vocab = set()
-		for caption in self.cap_data['caption']:
-			self.vocab.update(caption.split())
-		self.special_tokens = ['<start>', '<end>', '<pad>', '<unk>']
-		self.vocab.update(self.special_tokens)
-		self.vocab = sorted(self.vocab)
-		self.word2idx = {word: idx for idx, word in enumerate(self.vocab)}
-		self.idx2word = {idx: word for word, idx in self.word2idx.items()}
-		self.vocab_size = len(self.vocab)
+		# self.vocab = set()
+		# for caption in self.cap_data['caption']:
+		# 	self.vocab.update(caption.split())
+		# self.special_tokens = ['<start>', '<end>', '<pad>', '<unk>']
+		# self.vocab.update(self.special_tokens)
+		# self.vocab = sorted(self.vocab)
+		# self.word2idx = {word: idx for idx, word in enumerate(self.vocab)}
+		# self.idx2word = {idx: word for word, idx in self.word2idx.items()}
+		# self.vocab_size = len(self.vocab)
 
 		# Split data
 		self.cap_data = self.cap_data.groupby("image").agg({"caption": list}).sort_index().reset_index()
@@ -62,7 +78,8 @@ class FlickrDataset(Dataset):
 			self.cap_data = self.cap_data[val_end:]
 
 		if split == "train": # Undo grouping
-			self.cap_data = self.cap_data.explode("caption").reset_index(drop=True)
+			self.cap_data = explode_caption_df(self.cap_data)
+		self.cap_data = self.cap_data.sample(frac=data_size, random_state=42)
 
 	def __len__(self):
 		return len(self.cap_data)
