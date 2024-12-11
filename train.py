@@ -9,7 +9,7 @@ from src.DinoGpt import DinoGpt, train_DinoGpt
 from src.DinoSmolLM import DinoSmolLM, train_DinoSmolLM
 from src.ViTGpt import ViTGpt, train_ViTGpt
 from src.DinoGptVED import DinoGptVED, train_DinoGptVED
-from src.DatasetCaption import ReceipesDataset, collate_fn_lst
+from src.DatasetCaption import FlickrDataset, ReceipesDataset, collate_fn_lst
 from datetime import datetime
 
 log_wandb = True
@@ -37,8 +37,8 @@ def train(
 	# Prepare the dataset
 	print("Preparing dataset...")
 	data_path = os.path.join(kwargs["data_dir"], "receipes")
-	train_set = ReceipesDataset(data_path, split="train", data_size=kwargs["data_size"])
-	val_set = ReceipesDataset(data_path, split="val", data_size=kwargs["data_size"])
+	train_set = FlickrDataset(data_path, split="train", data_size=kwargs["data_size"])
+	val_set = FlickrDataset(data_path, split="val", data_size=kwargs["data_size"])
 	train_loader = DataLoader(
 		train_set,
 		batch_size=config["batch_size"],

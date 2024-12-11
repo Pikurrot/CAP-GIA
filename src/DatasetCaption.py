@@ -26,7 +26,7 @@ class FlickrDataset(Dataset):
 	def __init__(
 			self,
 			data_path: str,
-			transform_image: bool = True,
+			transform_image: bool = False,
 			split: Literal["train", "val", "test"] = "train",
 			split_size: list = [0.7, 0.1, 0.2]
 	):
@@ -70,12 +70,10 @@ class FlickrDataset(Dataset):
 	def __getitem__(self, idx):
 		img_name = os.path.join(self.img_path, self.cap_data.iloc[idx, 0])
 		image = Image.open(img_name).convert('RGB')
-		image = np.array(image)[..., ::-1]
-		image = Image.fromarray(image)
+		# image = np.array(image)#[..., ::-1]
+		# image = Image.fromarray(image)
 		if self.transform_image:
 			image = transform(image)
-		else:
-			image = transforms.ToTensor()(image)
 		caption = self.cap_data.iloc[idx, 1]
 		return image, caption
 
@@ -138,8 +136,8 @@ class ReceipesDataset(Dataset):
 	def __getitem__(self, idx):
 		img_name = os.path.join(self.img_path, self.cap_data.iloc[idx, 4]) + ".jpg"
 		image = Image.open(img_name).convert('RGB')
-		image = np.array(image)[..., ::-1]
-		image = Image.fromarray(image)
+		# image = np.array(image)[..., ::-1]
+		# image = Image.fromarray(image)
 		if self.transform_image:
 			image = transform(image)
 		caption = self.cap_data.iloc[idx, 1]
