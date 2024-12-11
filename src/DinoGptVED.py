@@ -192,7 +192,7 @@ def train_DinoGptVED(
 		print("Evaluating validation set...")
 		model.eval()
 		val_loss = 0
-		val_preds, val_gt, val_img_paths = [], []
+		val_preds, val_gt, val_img_paths = [], [], []
 		with torch.no_grad():
 			for b, (images, captions, img_paths) in enumerate(val_loader):		
 				# Forward pass
