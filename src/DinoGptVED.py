@@ -25,9 +25,9 @@ class DinoGptVED(nn.Module):
 
 		# Initialize VED model with pretrained DINO and GPT-2
 		self.VED = VisionEncoderDecoderModel.from_encoder_decoder_pretrained(
-			"facebook/dinov2-small", "gpt2", cache_dir=output_dir
+			"facebook/dinov2-base", "gpt2", cache_dir=output_dir
 		)
-		self.encoder_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-small", cache_dir=output_dir)
+		self.encoder_processor = AutoImageProcessor.from_pretrained("facebook/dinov2-base", cache_dir=output_dir)
 		self.decoder_tokenizer = GPT2TokenizerFast.from_pretrained("gpt2", cache_dir=output_dir)
 		
 		# Add special tokens
