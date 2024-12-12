@@ -37,9 +37,9 @@ def train(
 
 	# Prepare the dataset
 	print("Preparing dataset...")
-	data_path = os.path.join(kwargs["data_dir"], "flickr8k")
-	train_set = FlickrDataset(data_path, split="train", data_size=kwargs["data_size"], return_img_path=True)
-	val_set = FlickrDataset(data_path, split="val", data_size=kwargs["data_size"], return_img_path=True)
+	data_path = os.path.join(kwargs["data_dir"], "receipes")
+	train_set = ReceipesDataset(data_path, split="train", data_size=kwargs["data_size"], return_img_path=True)
+	val_set = ReceipesDataset(data_path, split="val", data_size=kwargs["data_size"], return_img_path=True)
 	train_loader = DataLoader(
 		train_set,
 		batch_size=config["batch_size"],
@@ -140,6 +140,7 @@ if __name__ == '__main__':
 	wandb_key = os.getenv("WANDB_KEY")
 	with open("config/train.yml", "r") as f:
 		config = yaml.load(f, Loader=yaml.FullLoader)
+	wandb.login(key=wandb_key)
 
 	# Train model on dataset
 	if args.gpu >= 0:
