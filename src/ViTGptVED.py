@@ -39,10 +39,10 @@ class ViTGptVED(nn.Module):
 
 		self.contrastive_criterion = nn.CosineEmbeddingLoss()
 
-	def image_text_contrastive_loss_baseline(self, image_feat, text_feat):
+	def image_text_contrastive_loss_baseline(self, image_feat, text_feat, temperature=0.07):
 		N = image_feat.shape[0]
 		logits = torch.matmul(image_feat, text_feat.t())
-		logits /= self.temperature
+		logits /= temperature
 		gt = torch.arange(N, device=logits.device)
 		loss1 = torch.nn.functional.cross_entropy(logits, gt)
 		loss2 = torch.nn.functional.cross_entropy(logits.t(), gt)
