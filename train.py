@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from src.DinoGpt import DinoGpt, train_DinoGpt
 from src.DinoSmolLM import DinoSmolLM, train_DinoSmolLM
 from src.ViTGpt import ViTGpt, train_ViTGpt
+from src.ViTGptVED import ViTGptVED, train_ViTGptVED
 from src.DinoGptVED import DinoGptVED, train_DinoGptVED
 from src.DatasetCaption import FlickrDataset, ReceipesDataset, collate_fn_lst
 from datetime import datetime
@@ -63,6 +64,9 @@ def train(
 	elif model_name == "DINO-SmolLM":
 		model_class = DinoSmolLM
 		train_func = train_DinoSmolLM
+	elif model_name == "ViT-GPT-VED":
+		model_class = ViTGptVED
+		train_func = train_ViTGptVED
 	elif model_name == "DINO-GPT-VED":
 		model_class = DinoGptVED
 		train_func = train_DinoGptVED

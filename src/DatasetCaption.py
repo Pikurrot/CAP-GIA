@@ -6,7 +6,7 @@ import cv2
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from PIL import Image
-from typing import Literal, Union
+from typing import Literal
 
 transform = transforms.Compose([
 	transforms.Resize((224, 224)),
