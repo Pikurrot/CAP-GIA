@@ -2,6 +2,7 @@ import wandb
 import torch
 import numpy as np
 from torch import nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from src.DatasetCaption import explode_caption_lst
 from transformers import AutoImageProcessor, VisionEncoderDecoderModel, GPT2TokenizerFast, GenerationConfig
@@ -38,6 +39,15 @@ class ViTGptVED(nn.Module):
 
 		self.contrastive_criterion = nn.CosineEmbeddingLoss()
 
+	def image_text_contrastive_loss_baseline(self, image_feat, text_feat):
+		N = image_feat.shape[0]
+		logits = torch.matmul(image_feat, text_feat.t())
+		logits /= self.temperature
+		gt = torch.arange(N, device=logits.device)
+		loss1 = torch.nn.functional.cross_entropy(logits, gt)
+		loss2 = torch.nn.functional.cross_entropy(logits.t(), gt)
+		return (loss1 + loss2) / 2
+
 	def forward(
 			self,
 			images: list, # PIL images
@@ -46,6 +56,7 @@ class ViTGptVED(nn.Module):
 			temperature: float=0.7,
 			repetition_penalty: float=1.2,
 			length_penalty: float=0.0,
+			lambda_contrastive: float=10.0, # Contrastive loss weight
 			inference_mode: Literal["sampling", "beam_search"] = "sampling",
 			n_beams: int=5,
 			top_k: int=50,
@@ -77,16 +88,13 @@ class ViTGptVED(nn.Module):
 			# Compute contrastive loss
 			encoder_hidden_states = outputs.encoder_last_hidden_state
 			decoder_hidden_states = outputs.decoder_hidden_states[-1]
-
-			# Compare encoder and decoder outputs (e.g., matching pairs)
-			target = torch.ones(encoder_hidden_states.size(0)).to(device) # Positive pair target
-			contrastive_loss = self.contrastive_criterion(
-				encoder_hidden_states.mean(dim=1),
-				decoder_hidden_states.mean(dim=1),
-				target
-			)
-			total_loss = ce_loss + contrastive_loss
-			return total_loss, ce_loss, contrastive_loss
+			image_latent = F.normalize(encoder_hidden_states.mean(dim=1), p=2, dim=1)
+			text_latent = F.normalize(decoder_hidden_states.mean(dim=1), p=2, dim=1)
+			contrastive_loss = self.image_text_contrastive_loss_baseline(image_latent, text_latent)
+			total_loss = ce_loss + lambda_contrastive * contrastive_loss
+			with torch.no_grad():
+				cos_sim = F.cosine_similarity(image_latent, text_latent, dim=1).mean().item()
+			return total_loss, ce_loss, contrastive_loss, cos_sim
 
 		else:
 			# Inference Mode
@@ -135,7 +143,7 @@ def train_ViTGptVED(
 		train_loss = 0
 		for b, (images, captions, _) in enumerate(train_loader):		
 			# Forward pass
-			loss, ce_loss, contrastive_loss = model(images, captions)
+			loss, ce_loss, contrastive_loss, cos_sim = model(images, captions)
 			train_loss += loss.item()
 			
 			optimizer.zero_grad()
@@ -175,6 +183,9 @@ def train_ViTGptVED(
 
 					# Log learning rate
 					wandb.log({"learning_rate": optimizer.param_groups[0]["lr"]})
+
+					# Log cosine similarity
+					wandb.log({"image-text_cosine_sim": cos_sim})
 
 		if scheduler:
 			scheduler.step()
@@ -217,16 +228,17 @@ def train_ViTGptVED(
 		# ---------------- Validation Phase ----------------
 		print("Evaluating validation set...")
 		model.eval()
-		val_loss, val_ce_loss, val_con_loss = 0, 0, 0
+		val_loss, val_ce_loss, val_con_loss, val_cos_sim = 0, 0, 0, 0
 		val_preds, val_gt, val_img_paths = [], [], []
 		with torch.no_grad():
 			for b, (images, captions, img_paths) in enumerate(val_loader):		
 				# Forward pass
 				images_exp, captions_exp = explode_caption_lst(images, captions)	
-				loss, ce_loss, contrastive_loss = model(images_exp, captions_exp)
+				loss, ce_loss, contrastive_loss, cos_sim = model(images_exp, captions_exp)
 				val_loss += loss.item()
 				val_ce_loss += ce_loss.item()
 				val_con_loss += contrastive_loss.item()
+				val_cos_sim += cos_sim
 
 				# Generate captions
 				pred_captions = model(images, captions=None)
@@ -257,6 +269,7 @@ def train_ViTGptVED(
 		avg_val_loss = val_loss / len(val_loader)
 		avg_val_ce_loss = val_ce_loss / len(val_loader)
 		avg_val_con_loss = val_con_loss / len(val_loader)
+		avg_val_cos_sim = val_cos_sim / len(val_loader)
 
 		print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
 		if log_wandb:
@@ -265,6 +278,7 @@ def train_ViTGptVED(
 				"epoch_val_loss": avg_val_loss,
 				"epoch_val_loss(cross_entropy)": avg_val_ce_loss,
 				"epoch_val_loss(contrastive)": avg_val_con_loss,
+				"epoch_val_cosine_sim": avg_val_cos_sim,
 				"BLEU-1": val_bleu_1["bleu"],
 				"BLEU-2": val_bleu_2["bleu"],
 				"ROUGE-L": val_rouge["rougeL"],
