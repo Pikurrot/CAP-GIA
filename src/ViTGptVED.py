@@ -36,6 +36,8 @@ class ViTGptVED(nn.Module):
 		self.VED.config.pad_token_id = self.decoder_tokenizer.pad_token_id
 		self.VED.config.decoder_start_token_id = self.decoder_tokenizer.bos_token_id
 
+		self.contrastive_criterion = nn.CosineEmbeddingLoss()
+
 	def forward(
 			self,
 			images: list, # PIL images
@@ -63,13 +65,29 @@ class ViTGptVED(nn.Module):
 			attention_mask = encodings.attention_mask.to(device)
 			labels[attention_mask == 0] = -100
 
-			# Compute loss
-			loss = self.VED(
+			# Compute cross-entropy loss
+			outputs = self.VED(
 				pixel_values=pixel_values,
-				labels=labels
-			).loss
-			return loss
-		
+				labels=labels,
+				decoder_attention_mask=attention_mask,
+				output_hidden_states=True
+			)
+			ce_loss = outputs.loss
+
+			# Compute contrastive loss
+			encoder_hidden_states = outputs.encoder_last_hidden_state
+			decoder_hidden_states = outputs.decoder_hidden_states[-1]
+
+			# Compare encoder and decoder outputs (e.g., matching pairs)
+			target = torch.ones(encoder_hidden_states.size(0)).to(device) # Positive pair target
+			contrastive_loss = self.contrastive_criterion(
+				encoder_hidden_states.mean(dim=1),
+				decoder_hidden_states.mean(dim=1),
+				target
+			)
+			total_loss = ce_loss + contrastive_loss
+			return total_loss
+
 		else:
 			# Inference Mode
 			# https://huggingface.co/docs/transformers/main_classes/text_generation
@@ -77,7 +95,7 @@ class ViTGptVED(nn.Module):
 				max_length=max_length,
 				temperature=temperature,
 				repetition_penalty=repetition_penalty,
-				length_penalty=length_penalty if n_beams > 1 else None,
+				length_penalty=length_penalty if (n_beams > 1 and inference_mode == "beam_search") else None,
 				do_sample=inference_mode == "sampling",
 				num_beams=n_beams if inference_mode == "beam_search" else 1,
 				top_k=top_k,
