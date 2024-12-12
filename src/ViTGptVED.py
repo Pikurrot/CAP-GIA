@@ -86,7 +86,7 @@ class ViTGptVED(nn.Module):
 				target
 			)
 			total_loss = ce_loss + contrastive_loss
-			return total_loss
+			return total_loss, ce_loss, contrastive_loss
 
 		else:
 			# Inference Mode
@@ -135,7 +135,7 @@ def train_ViTGptVED(
 		train_loss = 0
 		for b, (images, captions, _) in enumerate(train_loader):		
 			# Forward pass
-			loss = model(images, captions)
+			loss, ce_loss, contrastive_loss = model(images, captions)
 			train_loss += loss.item()
 			
 			optimizer.zero_grad()
@@ -148,13 +148,30 @@ def train_ViTGptVED(
 				if log_wandb:
 					# Log loss
 					wandb.log({"train_batch_loss": loss.item()})
+					wandb.log({"train_batch_loss(cross_entropy)": ce_loss.item()})
+					wandb.log({"train_batch_loss(contrastive)": contrastive_loss.item()})
 
 					# Log gradient magnitudes
 					grad_norms = []
-					for p in model.parameters():
-						if p.grad is not None:
-							grad_norms.append(p.grad.norm().item())
+					encoder_grad_norms = []
+					proj_grad_norms = []
+					decoder_grad_norms = []
+					for name, param in model.named_parameters():
+						if param.grad is not None:
+							grad_norms.append(param.grad.norm().item())
+							if "encoder" in name:
+								encoder_grad_norms.append(param.grad.norm().item())
+							elif "proj" in name:
+								proj_grad_norms.append(param.grad.norm().item())
+							elif "decoder" in name:
+								decoder_grad_norms.append(param.grad.norm().item())
 					wandb.log({"grad_norm": np.mean(grad_norms)})
+					if encoder_grad_norms:
+						wandb.log({"grad_norm/encoder": sum(encoder_grad_norms) / len(encoder_grad_norms)})
+					if proj_grad_norms:
+						wandb.log({"grad_norm/proj": sum(proj_grad_norms) / len(proj_grad_norms)})
+					if decoder_grad_norms:
+						wandb.log({"grad_norm/decoder": sum(decoder_grad_norms) / len(decoder_grad_norms)})
 
 					# Log learning rate
 					wandb.log({"learning_rate": optimizer.param_groups[0]["lr"]})
@@ -200,14 +217,16 @@ def train_ViTGptVED(
 		# ---------------- Validation Phase ----------------
 		print("Evaluating validation set...")
 		model.eval()
-		val_loss = 0
+		val_loss, val_ce_loss, val_con_loss = 0, 0, 0
 		val_preds, val_gt, val_img_paths = [], [], []
 		with torch.no_grad():
 			for b, (images, captions, img_paths) in enumerate(val_loader):		
 				# Forward pass
 				images_exp, captions_exp = explode_caption_lst(images, captions)	
-				loss = model(images_exp, captions_exp)
+				loss, ce_loss, contrastive_loss = model(images_exp, captions_exp)
 				val_loss += loss.item()
+				val_ce_loss += ce_loss.item()
+				val_con_loss += contrastive_loss.item()
 
 				# Generate captions
 				pred_captions = model(images, captions=None)
@@ -236,12 +255,16 @@ def train_ViTGptVED(
 		# Log Metrics
 		avg_train_loss = train_loss / len(train_loader)
 		avg_val_loss = val_loss / len(val_loader)
+		avg_val_ce_loss = val_ce_loss / len(val_loader)
+		avg_val_con_loss = val_con_loss / len(val_loader)
 
 		print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
 		if log_wandb:
 			wandb.log({
 				"epoch_train_loss": avg_train_loss,
 				"epoch_val_loss": avg_val_loss,
+				"epoch_val_loss(cross_entropy)": avg_val_ce_loss,
+				"epoch_val_loss(contrastive)": avg_val_con_loss,
 				"BLEU-1": val_bleu_1["bleu"],
 				"BLEU-2": val_bleu_2["bleu"],
 				"ROUGE-L": val_rouge["rougeL"],
