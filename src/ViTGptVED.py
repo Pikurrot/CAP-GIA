@@ -6,7 +6,14 @@ import torch.nn.functional as F
 from torch.nn.init import xavier_uniform_, zeros_
 from torch.utils.data import DataLoader
 from src.DatasetCaption import explode_caption_lst
-from transformers import AutoImageProcessor, VisionEncoderDecoderModel, GPT2TokenizerFast, GenerationConfig
+from transformers import (
+	AutoImageProcessor,
+	VisionEncoderDecoderModel,
+	GPT2TokenizerFast,
+	GenerationConfig,
+	ViTConfig,
+	ViTModel
+)
 import evaluate
 from typing import Literal
 # from peft import LoraConfig, get_peft_model, TaskType#, EvaConfig, initialize_lora_eva_weights
@@ -18,12 +25,12 @@ def distinct_ngrams(predictions, n=1):
 		ngrams.update(zip(*[tokens[i:] for i in range(n)]))
 	return len(ngrams) / sum(len(pred.split()) for pred in predictions)
 
-def transformer_init(module):
-	if isinstance(module, (nn.Linear, nn.Conv2d)):
+def custom_init(module):
+	if isinstance(module, nn.Linear):
 		xavier_uniform_(module.weight)
 		if module.bias is not None:
 			zeros_(module.bias)
-	elif isinstance(module, (nn.LayerNorm, nn.GroupNorm, nn.BatchNorm2d)):
+	elif isinstance(module, nn.LayerNorm):
 		nn.init.ones_(module.weight)
 		nn.init.zeros_(module.bias)
 
@@ -34,11 +41,14 @@ class ViTGptVED(nn.Module):
 	):
 		super().__init__()
 
-		# Initialize ViT model with pretrained DINO and GPT-2
+		# Initialize VED model with pretrained ViT and GPT-2
 		self.VED = VisionEncoderDecoderModel.from_pretrained(
 			"nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir
 		)
-		self.VED.apply(transformer_init)
+		encoder_config = ViTConfig()
+		new_encoder = ViTModel(encoder_config)
+		self.VED.encoder = new_encoder
+		self.VED.encoder.apply(custom_init)
 		self.encoder_processor = AutoImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
 		self.decoder_tokenizer = GPT2TokenizerFast.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
 
