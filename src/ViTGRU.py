@@ -43,8 +43,8 @@ class ViTGRU(nn.Module):
 		encoder_config = ViTConfig(
 			hidden_size=hidden_size,
 			num_hidden_layers=12,
-			num_attention_heads=12,
-			intermediate_size=3072
+			num_attention_heads=8,
+			intermediate_size=2048,
 		)
 		self.encoder = ViTModel(encoder_config)
 		self.encoder_processor = AutoImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
