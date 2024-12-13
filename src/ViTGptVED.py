@@ -11,6 +11,7 @@ from src.DatasetCaption import explode_caption_lst
 from transformers import (
 	AutoImageProcessor,
 	VisionEncoderDecoderModel,
+	PreTrainedTokenizerFast,
 	GPT2TokenizerFast,
 	GPT2LMHeadModel,
 	GenerationConfig,
@@ -66,12 +67,14 @@ class ViTGptVED(nn.Module):
 				char_vocab.extend(special_tokens)
 				with open(vocab_file, "w") as f:
 					json.dump({char: idx for idx, char in enumerate(char_vocab)}, f)
-			self.decoder_tokenizer = GPT2TokenizerFast(
-				vocab_file=vocab_file,
-				bos_token="<bos>",
-				eos_token="<eos>",
-				pad_token="<pad>"
-			)
+			self.decoder_tokenizer = PreTrainedTokenizerFast(
+                tokenizer_object=None,
+                vocab_file=vocab_file,
+                unk_token=None,
+                pad_token="<pad>",
+                bos_token="<bos>",
+                eos_token="<eos>"
+            )
 			decoder_config = self.VED.decoder.config
 			decoder_config.vocab_size = len(self.decoder_tokenizer)
 			self.VED.decoder = GPT2LMHeadModel(decoder_config)
