@@ -9,7 +9,6 @@ from src.DatasetCaption import explode_caption_lst
 from transformers import (
 	AutoImageProcessor,
 	VisionEncoderDecoderModel,
-	VisionEncoderDecoderConfig,
 	GPT2TokenizerFast,
 	GenerationConfig,
 	ViTConfig,
@@ -43,20 +42,17 @@ class ViTGptVED(nn.Module):
 		super().__init__()
 
 		# Initialize VED model with pretrained ViT and GPT-2
-		decoder = VisionEncoderDecoderModel.from_pretrained(
+		self.VED = VisionEncoderDecoderModel.from_pretrained(
 			"nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir
-		).decoder
+		)
 		encoder_config = ViTConfig(
 			hidden_size=1024,
 			num_hidden_layers=24,
 			num_attention_heads=16,
 		)
-		encoder = ViTModel(encoder_config)
-		VED_config = VisionEncoderDecoderConfig.from_encoder_decoder_configs(encoder.config, decoder.config)
-		self.VED = VisionEncoderDecoderModel(config=VED_config, encoder=encoder, decoder=decoder)
+		new_encoder = ViTModel(encoder_config)
+		self.VED.encoder = new_encoder
 		self.VED.encoder.apply(custom_init)
-		self.VED.enc_to_dec_proj = nn.Linear(1024, 768)
-		self.VED.enc_to_dec_proj.apply(custom_init)
 		self.encoder_processor = AutoImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
 		self.decoder_tokenizer = GPT2TokenizerFast.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
 
@@ -125,7 +121,6 @@ class ViTGptVED(nn.Module):
 
 			# Compute cross-entropy loss
 			encoder_outputs = self.VED.encoder(pixel_values)
-			encoder_outputs = self.VED.enc_to_dec_proj(encoder_outputs)
 			outputs = self.VED(
 				encoder_outputs=encoder_outputs,
 				labels=labels,
