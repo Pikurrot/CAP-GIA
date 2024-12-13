@@ -40,23 +40,6 @@ class ViTGptVED(nn.Module):
 		self.contrastive_criterion = nn.CosineEmbeddingLoss()
 
 		# LoRA
-		target_modules=[
-			# Encoder attention modules
-			"encoder.encoder.layer.*.attention.attention.query",
-			"encoder.encoder.layer.*.attention.attention.key",
-			"encoder.encoder.layer.*.attention.attention.value",
-			"encoder.encoder.layer.*.attention.output.dense",
-			
-			# Decoder attention and projection modules
-			"decoder.transformer.h.*.attn.c_attn",
-			"decoder.transformer.h.*.attn.c_proj",
-			"decoder.transformer.h.*.crossattention.c_attn",
-			"decoder.transformer.h.*.crossattention.c_proj",
-			
-			# MLP layers
-			"decoder.transformer.h.*.mlp.c_fc",
-			"decoder.transformer.h.*.mlp.c_proj"
-		]
 		def print_module_names(model):
 			for name, _ in model.named_parameters():
 				print(name)
@@ -64,7 +47,7 @@ class ViTGptVED(nn.Module):
 		lora_config = LoraConfig(
 			r=16,
 			lora_alpha=32,
-			target_modules=target_modules,
+			target_modules=r".*\.attention\.|.*\.c_attn|.*\.c_proj|.*\.mlp\.",
 			lora_dropout=0.1,
 			task_type=TaskType.SEQ_2_SEQ_LM,
 			init_lora_weights="gaussian",
