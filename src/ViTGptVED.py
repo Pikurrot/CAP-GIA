@@ -40,17 +40,33 @@ class ViTGptVED(nn.Module):
 		self.contrastive_criterion = nn.CosineEmbeddingLoss()
 
 		# LoRA
+		target_modules_encoder = [
+			# Attention layers
+			"encoder.encoder.layer.*.attention.attention.query",
+			"encoder.encoder.layer.*.attention.attention.key", 
+			"encoder.encoder.layer.*.attention.attention.value",
+			"encoder.encoder.layer.*.attention.output.dense"
+		]
+		target_modules_decoder = [
+			# Main attention layers
+			"decoder.transformer.h.*.attn.c_attn",
+			"decoder.transformer.h.*.attn.c_proj",
+			
+			# Cross-attention layers
+			"decoder.transformer.h.*.crossattention.c_attn",
+			"decoder.transformer.h.*.crossattention.c_proj",
+			
+			# MLP layers
+			"decoder.transformer.h.*.mlp.c_fc",
+			"decoder.transformer.h.*.mlp.c_proj"
+		]
 		lora_config = LoraConfig(
 			r=16,
 			lora_alpha=32,
-			target_modules=[
-				"attention.query",
-				"attention.key",
-				"attention.value"
-			],
+			target_modules=target_modules_encoder + target_modules_decoder,
 			lora_dropout=0.1,
 			task_type=TaskType.SEQ_2_SEQ_LM,
-			init_lora_weights="eva",
+			init_lora_weights="gaussian",
 			eva_config = EvaConfig(rho = 2.0),
 		)
 		self.VED = get_peft_model(

@@ -89,6 +89,8 @@ def train(
 			[{"params": model.encoder.parameters(), "lr": config["lr"], "name": "encoder"},	
 			{"params": model.proj.parameters(), "lr": config["lr"], "name": "proj"},
 			{"params": model.decoder.parameters(), "lr": config["lr"], "name": "decoder"}],
+			weight_decay=0.01,
+			num_warmup_steps=100
 		)
 	scheduler_conf = config["scheduler"]
 	if scheduler_conf is not None:
