@@ -1,6 +1,8 @@
 import wandb
 import torch
 import numpy as np
+import os
+import json
 from torch import nn
 import torch.nn.functional as F
 from torch.nn.init import xavier_uniform_, zeros_
@@ -10,6 +12,7 @@ from transformers import (
 	AutoImageProcessor,
 	VisionEncoderDecoderModel,
 	GPT2TokenizerFast,
+	GPT2LMHeadModel,
 	GenerationConfig,
 	ViTConfig,
 	ViTModel
@@ -37,7 +40,8 @@ def custom_init(module):
 class ViTGptVED(nn.Module):
 	def __init__(
 			self,
-			output_dir: str
+			output_dir: str,
+			char_level: bool = True
 	):
 		super().__init__()
 
@@ -50,12 +54,36 @@ class ViTGptVED(nn.Module):
 		self.VED.encoder = new_encoder
 		self.VED.encoder.apply(custom_init)
 		self.encoder_processor = AutoImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
-		self.decoder_tokenizer = GPT2TokenizerFast.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
-
-		# Add special tokens
-		self.decoder_tokenizer.pad_token = self.decoder_tokenizer.eos_token
-		self.VED.config.pad_token_id = self.decoder_tokenizer.pad_token_id
-		self.VED.config.decoder_start_token_id = self.decoder_tokenizer.bos_token_id
+		
+		if char_level:
+			vocab_file = "char_vocab.json"
+			if os.path.exists(os.path.join(output_dir, vocab_file)):
+				with open(vocab_file, "r") as f:
+					char_vocab = json.load(f)
+			else:
+				char_vocab = [chr(i) for i in range(32, 127)]  # ASCII characters (printable)
+				special_tokens = ["<pad>", "<bos>", "<eos>"]
+				char_vocab.extend(special_tokens)
+				with open(vocab_file, "w") as f:
+					json.dump({char: idx for idx, char in enumerate(char_vocab)}, f)
+			self.decoder_tokenizer = GPT2TokenizerFast(
+				vocab_file=vocab_file,
+				bos_token="<bos>",
+				eos_token="<eos>",
+				pad_token="<pad>"
+			)
+			decoder_config = self.VED.decoder.config
+			decoder_config.vocab_size = len(self.decoder_tokenizer)
+			self.VED.decoder = GPT2LMHeadModel(decoder_config)
+			self.VED.config.pad_token_id = self.decoder_tokenizer.pad_token_id
+			self.VED.config.bos_token_id = self.decoder_tokenizer.bos_token_id
+			self.VED.config.eos_token_id = self.decoder_tokenizer.eos_token_id
+		else:
+			self.decoder_tokenizer = GPT2TokenizerFast.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
+			# Add special tokens
+			self.decoder_tokenizer.pad_token = self.decoder_tokenizer.eos_token
+			self.VED.config.pad_token_id = self.decoder_tokenizer.pad_token_id
+			self.VED.config.decoder_start_token_id = self.decoder_tokenizer.bos_token_id
 
 		self.contrastive_criterion = nn.CosineEmbeddingLoss()
 
