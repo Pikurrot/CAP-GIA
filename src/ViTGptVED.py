@@ -34,8 +34,8 @@ class ViTGptVED(nn.Module):
 	):
 		super().__init__()
 
-		# Initialize VED model with pretrained DINO and GPT-2
-		self.VED = VisionEncoderDecoderModel.config.from_pretrained(
+		# Initialize ViT model with pretrained DINO and GPT-2
+		self.VED = VisionEncoderDecoderModel.from_pretrained(
 			"nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir
 		)
 		self.VED.apply(transformer_init)
@@ -93,7 +93,7 @@ class ViTGptVED(nn.Module):
 	):
 		device = next(self.parameters()).device
 
-		# Encode images with DINO
+		# Encode images with ViT
 		pixel_values = self.encoder_processor(images, return_tensors="pt").pixel_values.to(device)
 
 		if captions is not None:
