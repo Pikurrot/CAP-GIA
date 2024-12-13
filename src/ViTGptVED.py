@@ -91,10 +91,10 @@ class ViTGptVED(nn.Module):
 			self,
 			images: list, # PIL images
 			captions: list[str] = None,
-			max_new_tokens: int=30,
+			max_new_tokens: int=20,
 			temperature: float=0.7,
 			repetition_penalty: float=2.0,
-			length_penalty: float=0.8,
+			length_penalty: float=3.0,
 			lambda_contrastive: float=10.0, # Contrastive loss weight
 			inference_mode: Literal["sampling", "beam_search"] = "beam_search",
 			n_beams: int=5,
