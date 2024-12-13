@@ -50,15 +50,13 @@ class ViTGptVED(nn.Module):
 				"attention.key",
 			],
 			lora_dropout=0.1,
-			bias="none",
 			task_type=TaskType.SEQ_2_SEQ_LM,
 			init_lora_weights="eva",
 			eva_config = EvaConfig(rho = 2.0),
 		)
 		self.VED = get_peft_model(
 			model=self.VED,
-			peft_config=lora_config,
-			low_cpu_mem_usage=True
+			peft_config=lora_config
 		)
 
 	def image_text_contrastive_loss_baseline(self, image_feat, text_feat, temperature=0.07):
