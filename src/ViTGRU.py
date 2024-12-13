@@ -1,22 +1,17 @@
-import wandb
 import torch
+import wandb
 import numpy as np
 from torch import nn
-import torch.nn.functional as F
 from torch.nn.init import xavier_uniform_, zeros_
 from torch.utils.data import DataLoader
 from src.DatasetCaption import explode_caption_lst
 from transformers import (
 	AutoImageProcessor,
-	VisionEncoderDecoderModel,
-	GPT2TokenizerFast,
-	GenerationConfig,
 	ViTConfig,
 	ViTModel
 )
 import evaluate
-from typing import Literal
-# from peft import LoraConfig, get_peft_model, TaskType#, EvaConfig, initialize_lora_eva_weights
+from typing import List
 
 def distinct_ngrams(predictions, n=1):
 	ngrams = set()
@@ -34,135 +29,107 @@ def custom_init(module):
 		nn.init.ones_(module.weight)
 		nn.init.zeros_(module.bias)
 
-class ViTGptVED(nn.Module):
+class ViTGRU(nn.Module):
 	def __init__(
-			self,
-			output_dir: str
+		self,
+		output_dir: str,
+		hidden_size: int = 512,
+		num_layers: int = 2,
+		vocab_size: int = 128
 	):
 		super().__init__()
 
-		# Initialize VED model with pretrained ViT and GPT-2
-		self.VED = VisionEncoderDecoderModel.from_pretrained(
-			"nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir
+		# Initialize ViT encoder
+		encoder_config = ViTConfig(
+			hidden_size=hidden_size,
+			num_hidden_layers=12,
+			num_attention_heads=12,
+			intermediate_size=3072
 		)
-		encoder_config = ViTConfig()
-		new_encoder = ViTModel(encoder_config)
-		self.VED.encoder = new_encoder
-		self.VED.encoder.apply(custom_init)
+		self.encoder = ViTModel(encoder_config)
 		self.encoder_processor = AutoImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
-		self.decoder_tokenizer = GPT2TokenizerFast.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
 
-		# Add special tokens
-		self.decoder_tokenizer.pad_token = self.decoder_tokenizer.eos_token
-		self.VED.config.pad_token_id = self.decoder_tokenizer.pad_token_id
-		self.VED.config.decoder_start_token_id = self.decoder_tokenizer.bos_token_id
+		# GRU Decoder
+		self.decoder = nn.GRU(
+			input_size=hidden_size,
+			hidden_size=hidden_size,
+			num_layers=num_layers,
+			batch_first=True
+		)
 
-		self.contrastive_criterion = nn.CosineEmbeddingLoss()
+		# Output projection layer
+		self.output_proj = nn.Linear(hidden_size, vocab_size)
 
-		# LoRA
-		# def print_module_names(model):
-		# 	for name, _ in model.named_parameters():
-		# 		print(name)
-		# print_module_names(self.VED)
-		# lora_config = LoraConfig(
-		# 	r=16,
-		# 	lora_alpha=32,
-		# 	target_modules=r".*\.attention\.|.*\.c_attn|.*\.c_proj|.*\.mlp\.",
-		# 	lora_dropout=0.1,
-		# 	task_type=TaskType.SEQ_2_SEQ_LM,
-		# 	init_lora_weights="gaussian",
-		# 	# eva_config = EvaConfig(rho = 2.0),
-		# )
-		# self.VED = get_peft_model(
-		# 	model=self.VED,
-		# 	peft_config=lora_config
-		# )
+		# Embedding layer for captions
+		self.embedding = nn.Embedding(vocab_size, hidden_size)
 
-	def image_text_contrastive_loss_baseline(self, image_feat, text_feat, temperature=0.07):
-		N = image_feat.shape[0]
-		logits = torch.matmul(image_feat, text_feat.t())
-		logits /= temperature
-		gt = torch.arange(N, device=logits.device)
-		loss1 = torch.nn.functional.cross_entropy(logits, gt)
-		loss2 = torch.nn.functional.cross_entropy(logits.t(), gt)
-		return (loss1 + loss2) / 2
+		# Loss function
+		self.criterion = nn.CrossEntropyLoss(ignore_index=0)
 
 	def forward(
-			self,
-			images: list, # PIL images
-			captions: list[str] = None,
-			max_new_tokens: int=20,
-			temperature: float=0.7,
-			repetition_penalty: float=2.0,
-			length_penalty: float=3.0,
-			lambda_contrastive: float=10.0, # Contrastive loss weight
-			inference_mode: Literal["sampling", "beam_search"] = "beam_search",
-			n_beams: int=5,
-			top_k: int=50,
-			top_p: float=0.95
+		self,
+		images: List,
+		captions: List[str] = None,
+		max_caption_length: int = 20,
+		end_token: int = 1
 	):
 		device = next(self.parameters()).device
 
-		# Encode images with ViT
+		# Preprocess images and encode them
 		pixel_values = self.encoder_processor(images, return_tensors="pt").pixel_values.to(device)
+		encoder_outputs = self.encoder(pixel_values).last_hidden_state  # (batch_size, seq_len, hidden_size)
+
+		batch_size = encoder_outputs.size(0)
+		hidden_state = torch.zeros(self.decoder.num_layers, batch_size, self.decoder.hidden_size).to(device)
 
 		if captions is not None:
-			# Training/Validation Mode
+			# Training Mode
+			# Convert captions to character-level indices
+			captions = [[ord(c) for c in caption] for caption in captions]
+			captions = torch.nn.utils.rnn.pad_sequence(
+				[torch.tensor(c) for c in captions], batch_first=True, padding_value=0
+			).to(device)
 
-			# Encode captions with GPT-2
-			encodings = self.decoder_tokenizer(captions, return_tensors='pt', padding=True, truncation=True)
-			labels = encodings.input_ids.to(device)
-			attention_mask = encodings.attention_mask.to(device)
-			labels[attention_mask == 0] = -100
+			captions_embed = self.embedding(captions)
 
-			# Compute cross-entropy loss
-			encoder_outputs = self.VED.encoder(pixel_values)
-			outputs = self.VED(
-				encoder_outputs=encoder_outputs,
-				labels=labels,
-				decoder_attention_mask=attention_mask,
-				output_hidden_states=True
-			)
-			ce_loss = outputs.loss
+			# Decode captions
+			decoder_outputs, _ = self.decoder(captions_embed, hidden_state)
 
-			# Compute contrastive loss
-			encoder_hidden_states = outputs.encoder_last_hidden_state
-			decoder_hidden_states = outputs.decoder_hidden_states[-1]
-			image_latent = F.normalize(encoder_hidden_states.mean(dim=1), p=2, dim=1)
-			text_latent = F.normalize(decoder_hidden_states.mean(dim=1), p=2, dim=1)
-			contrastive_loss = self.image_text_contrastive_loss_baseline(image_latent, text_latent)
-			total_loss = ce_loss + lambda_contrastive * contrastive_loss
-			with torch.no_grad():
-				cos_sim = F.cosine_similarity(image_latent, text_latent, dim=1).mean().item()
-			return total_loss, ce_loss, contrastive_loss, cos_sim
+			# Project to vocabulary
+			logits = self.output_proj(decoder_outputs)
+
+			# Compute loss
+			loss = self.criterion(logits.view(-1, logits.size(-1)), captions.view(-1))
+			return loss
 
 		else:
 			# Inference Mode
-			# https://huggingface.co/docs/transformers/main_classes/text_generation
-			generation_config = GenerationConfig(
-				max_new_tokens=max_new_tokens,
-				temperature=temperature,
-				repetition_penalty=repetition_penalty,
-				length_penalty=length_penalty if (n_beams > 1 and inference_mode == "beam_search") else None,
-				do_sample=inference_mode == "sampling",
-				num_beams=n_beams if inference_mode == "beam_search" else 1,
-				top_k=top_k,
-				top_p=top_p,
-				pad_token_id=self.decoder_tokenizer.pad_token_id,
-				eos_token_id=self.decoder_tokenizer.eos_token_id,
-			)
-			encodings = self.decoder_tokenizer([""], return_tensors='pt')  # Empty input or BOS
-			attention_mask = encodings.attention_mask.to(device)
-			outputs = self.VED.generate(
-				pixel_values=pixel_values,
-				generation_config=generation_config
-			)
-			generated_texts = self.decoder_tokenizer.batch_decode(outputs, skip_special_tokens=True)
-			return generated_texts
-		
+			generated_captions = torch.zeros((batch_size, max_caption_length), dtype=torch.long).to(device)
+			input_token = torch.zeros((batch_size, 1), dtype=torch.long).to(device)
+
+			for t in range(max_caption_length):
+				input_embed = self.embedding(input_token)
+				decoder_output, hidden_state = self.decoder(input_embed, hidden_state)
+
+				logits = self.output_proj(decoder_output.squeeze(1))
+				next_token = torch.argmax(logits, dim=-1)
+				generated_captions[:, t] = next_token
+
+				input_token = next_token.unsqueeze(1)
+
+			# Stop generation if end token is reached for all sequences
+				if (next_token == end_token).all():
+					break
+
+				input_token = next_token.unsqueeze(1)
+
+			# Convert generated character indices to strings
+			captions = ["".join(chr(idx) for idx in row if idx != 0 and idx != end_token) for row in generated_captions.cpu().numpy()]
+			return captions
+
 
 def train_ViTGptVED(
-		model: ViTGptVED,
+		model: ViTGRU,
 		train_loader: DataLoader,
 		val_loader: DataLoader,
 		optimizer: torch.optim.Optimizer,
