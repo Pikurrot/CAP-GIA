@@ -55,6 +55,8 @@ class ViTGptVED(nn.Module):
 		VED_config = VisionEncoderDecoderConfig.from_encoder_decoder_configs(encoder.config, decoder.config)
 		self.VED = VisionEncoderDecoderModel(config=VED_config, encoder=encoder, decoder=decoder)
 		self.VED.encoder.apply(custom_init)
+		self.VED.enc_to_dec_proj = nn.Linear(1024, 768)
+		self.VED.enc_to_dec_proj.apply(custom_init)
 		self.encoder_processor = AutoImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
 		self.decoder_tokenizer = GPT2TokenizerFast.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
 
