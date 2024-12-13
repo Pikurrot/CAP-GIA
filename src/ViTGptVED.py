@@ -57,7 +57,6 @@ class ViTGptVED(nn.Module):
 			model=self.VED,
 			peft_config=lora_config
 		)
-		print(self.VED.forward.__code__.co_varnames)
 
 	def image_text_contrastive_loss_baseline(self, image_feat, text_feat, temperature=0.07):
 		N = image_feat.shape[0]
@@ -135,9 +134,8 @@ class ViTGptVED(nn.Module):
 			encodings = self.decoder_tokenizer([""], return_tensors='pt')  # Empty input or BOS
 			attention_mask = encodings.attention_mask.to(device)
 			outputs = self.VED.generate(
-				pixel_values,
-				generation_config=generation_config,
-				attention_mask=attention_mask
+				pixel_values=pixel_values,
+				generation_config=generation_config
 			)
 			generated_texts = self.decoder_tokenizer.batch_decode(outputs, skip_special_tokens=True)
 			return generated_texts
