@@ -91,12 +91,12 @@ class ViTGptVED(nn.Module):
 			self,
 			images: list, # PIL images
 			captions: list[str] = None,
-			max_length: int=30,
+			max_new_tokens: int=30,
 			temperature: float=0.7,
-			repetition_penalty: float=1.2,
-			length_penalty: float=0.0,
+			repetition_penalty: float=2.0,
+			length_penalty: float=0.8,
 			lambda_contrastive: float=10.0, # Contrastive loss weight
-			inference_mode: Literal["sampling", "beam_search"] = "sampling",
+			inference_mode: Literal["sampling", "beam_search"] = "beam_search",
 			n_beams: int=5,
 			top_k: int=50,
 			top_p: float=0.95
@@ -140,7 +140,7 @@ class ViTGptVED(nn.Module):
 			# Inference Mode
 			# https://huggingface.co/docs/transformers/main_classes/text_generation
 			generation_config = GenerationConfig(
-				max_length=max_length,
+				max_new_tokens=max_new_tokens,
 				temperature=temperature,
 				repetition_penalty=repetition_penalty,
 				length_penalty=length_penalty if (n_beams > 1 and inference_mode == "beam_search") else None,
