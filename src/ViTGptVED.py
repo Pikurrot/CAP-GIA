@@ -8,7 +8,7 @@ from src.DatasetCaption import explode_caption_lst
 from transformers import AutoImageProcessor, VisionEncoderDecoderModel, GPT2TokenizerFast, GenerationConfig
 import evaluate
 from typing import Literal
-
+from peft import LoraConfig, get_peft_model, TaskType, EvaConfig
 
 def distinct_ngrams(predictions, n=1):
 	ngrams = set()
@@ -38,6 +38,28 @@ class ViTGptVED(nn.Module):
 		self.VED.config.decoder_start_token_id = self.decoder_tokenizer.bos_token_id
 
 		self.contrastive_criterion = nn.CosineEmbeddingLoss()
+
+		# LoRA
+		lora_config = LoraConfig(
+			r=16,
+			lora_alpha=32,
+			target_modules=[
+				"encoder.encoder.layer.*.attention.attention.query",
+				"encoder.encoder.layer.*.attention.attention.key",
+				"decoder.decoder.layer.*.attention.attention.query",
+				"decoder.decoder.layer.*.attention.attention.key",
+			],
+			lora_dropout=0.1,
+			bias="none",
+			task_type=TaskType.SEQ_2_SEQ_LM,
+			init_lora_weights="eva",
+			eva_config = EvaConfig(rho = 2.0),
+		)
+		self.VED = get_peft_model(
+			model=self.VED,
+			peft_config=lora_config,
+			low_cpu_mem_usage=True
+		)
 
 	def image_text_contrastive_loss_baseline(self, image_feat, text_feat, temperature=0.07):
 		N = image_feat.shape[0]
