@@ -57,6 +57,7 @@ class ViTGptVED(nn.Module):
 			model=self.VED,
 			peft_config=lora_config
 		)
+		print(self.VED.forward.__code__.co_varnames)
 
 	def image_text_contrastive_loss_baseline(self, image_feat, text_feat, temperature=0.07):
 		N = image_feat.shape[0]
@@ -96,10 +97,12 @@ class ViTGptVED(nn.Module):
 			labels[attention_mask == 0] = -100
 
 			# Compute cross-entropy loss
+			encoder_outputs = self.VED.encoder(pixel_values)
 			outputs = self.VED(
-				pixel_values=pixel_values,
+				encoder_outputs=encoder_outputs,
 				labels=labels,
-				decoder_attention_mask=attention_mask
+				decoder_attention_mask=attention_mask,
+				output_hidden_states=True
 			)
 			ce_loss = outputs.loss
 
