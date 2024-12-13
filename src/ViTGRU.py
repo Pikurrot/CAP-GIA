@@ -128,7 +128,7 @@ class ViTGRU(nn.Module):
 			return captions
 
 
-def train_ViTGptVED(
+def train_ViTGRU(
 		model: ViTGRU,
 		train_loader: DataLoader,
 		val_loader: DataLoader,
