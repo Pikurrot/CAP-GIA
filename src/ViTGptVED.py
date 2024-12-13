@@ -3,12 +3,13 @@ import torch
 import numpy as np
 from torch import nn
 import torch.nn.functional as F
+from torch.nn.init import xavier_uniform_, zeros_
 from torch.utils.data import DataLoader
 from src.DatasetCaption import explode_caption_lst
 from transformers import AutoImageProcessor, VisionEncoderDecoderModel, GPT2TokenizerFast, GenerationConfig
 import evaluate
 from typing import Literal
-from peft import LoraConfig, get_peft_model, TaskType#, EvaConfig, initialize_lora_eva_weights
+# from peft import LoraConfig, get_peft_model, TaskType#, EvaConfig, initialize_lora_eva_weights
 
 def distinct_ngrams(predictions, n=1):
 	ngrams = set()
@@ -17,6 +18,14 @@ def distinct_ngrams(predictions, n=1):
 		ngrams.update(zip(*[tokens[i:] for i in range(n)]))
 	return len(ngrams) / sum(len(pred.split()) for pred in predictions)
 
+def transformer_init(module):
+	if isinstance(module, (nn.Linear, nn.Conv2d)):
+		xavier_uniform_(module.weight)
+		if module.bias is not None:
+			zeros_(module.bias)
+	elif isinstance(module, (nn.LayerNorm, nn.GroupNorm, nn.BatchNorm2d)):
+		nn.init.ones_(module.weight)
+		nn.init.zeros_(module.bias)
 
 class ViTGptVED(nn.Module):
 	def __init__(
@@ -26,9 +35,10 @@ class ViTGptVED(nn.Module):
 		super().__init__()
 
 		# Initialize VED model with pretrained DINO and GPT-2
-		self.VED = VisionEncoderDecoderModel.from_pretrained(
+		self.VED = VisionEncoderDecoderModel.config.from_pretrained(
 			"nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir
 		)
+		self.VED.apply(transformer_init)
 		self.encoder_processor = AutoImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
 		self.decoder_tokenizer = GPT2TokenizerFast.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
 
@@ -40,23 +50,23 @@ class ViTGptVED(nn.Module):
 		self.contrastive_criterion = nn.CosineEmbeddingLoss()
 
 		# LoRA
-		def print_module_names(model):
-			for name, _ in model.named_parameters():
-				print(name)
-		print_module_names(self.VED)
-		lora_config = LoraConfig(
-			r=16,
-			lora_alpha=32,
-			target_modules=r".*\.attention\.|.*\.c_attn|.*\.c_proj|.*\.mlp\.",
-			lora_dropout=0.1,
-			task_type=TaskType.SEQ_2_SEQ_LM,
-			init_lora_weights="gaussian",
-			# eva_config = EvaConfig(rho = 2.0),
-		)
-		self.VED = get_peft_model(
-			model=self.VED,
-			peft_config=lora_config
-		)
+		# def print_module_names(model):
+		# 	for name, _ in model.named_parameters():
+		# 		print(name)
+		# print_module_names(self.VED)
+		# lora_config = LoraConfig(
+		# 	r=16,
+		# 	lora_alpha=32,
+		# 	target_modules=r".*\.attention\.|.*\.c_attn|.*\.c_proj|.*\.mlp\.",
+		# 	lora_dropout=0.1,
+		# 	task_type=TaskType.SEQ_2_SEQ_LM,
+		# 	init_lora_weights="gaussian",
+		# 	# eva_config = EvaConfig(rho = 2.0),
+		# )
+		# self.VED = get_peft_model(
+		# 	model=self.VED,
+		# 	peft_config=lora_config
+		# )
 
 	def image_text_contrastive_loss_baseline(self, image_feat, text_feat, temperature=0.07):
 		N = image_feat.shape[0]
