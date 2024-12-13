@@ -125,6 +125,7 @@ class ViTGptVED(nn.Module):
 
 			# Compute cross-entropy loss
 			encoder_outputs = self.VED.encoder(pixel_values)
+			encoder_outputs = self.VED.enc_to_dec_proj(encoder_outputs[0])
 			outputs = self.VED(
 				encoder_outputs=encoder_outputs,
 				labels=labels,
