@@ -45,7 +45,11 @@ class ViTGptVED(nn.Module):
 		self.VED = VisionEncoderDecoderModel.from_pretrained(
 			"nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir
 		)
-		encoder_config = ViTConfig()
+		encoder_config = ViTConfig(
+			hidden_size=1024,
+			num_hidden_layers=24,
+			num_attention_heads=16,
+		)
 		new_encoder = ViTModel(encoder_config)
 		self.VED.encoder = new_encoder
 		self.VED.encoder.apply(custom_init)
@@ -93,7 +97,7 @@ class ViTGptVED(nn.Module):
 			captions: list[str] = None,
 			max_new_tokens: int=20,
 			temperature: float=0.7,
-			repetition_penalty: float=2.0,
+			repetition_penalty: float=4.0,
 			length_penalty: float=3.0,
 			lambda_contrastive: float=10.0, # Contrastive loss weight
 			inference_mode: Literal["sampling", "beam_search"] = "beam_search",
