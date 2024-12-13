@@ -10,7 +10,6 @@ from src.DinoSmolLM import DinoSmolLM, train_DinoSmolLM
 from src.ViTGpt import ViTGpt, train_ViTGpt
 from src.ViTGptVED import ViTGptVED, train_ViTGptVED
 from src.DinoGptVED import DinoGptVED, train_DinoGptVED
-from src.ViTGRU import ViTGRU, train_ViTGRU
 from src.DatasetCaption import ReceipesDataset, collate_fn_lst
 from datetime import datetime
 from transformers import get_linear_schedule_with_warmup
@@ -72,9 +71,6 @@ def train(
 	elif model_name == "DINO-GPT-VED":
 		model_class = DinoGptVED
 		train_func = train_DinoGptVED
-	elif model_name == "ViT-GRU":
-		model_class = ViTGRU
-		train_func = train_ViTGRU
 	output_dir = kwargs["out_dir"]
 	model = model_class(
 		output_dir=output_dir
@@ -86,7 +82,7 @@ def train(
 	total_training_steps = len(train_loader) * config["epochs"]
 	warmup_steps = int(0.1 * total_training_steps) 
 	optimizer_name = config["optimizer"]
-	if model_name.endswith("VED") or model_name.endswith("GRU"):
+	if model_name.endswith("VED"):
 		optimizer = getattr(torch.optim, optimizer_name)(
 			model.parameters(),
 			lr=config["lr"],
