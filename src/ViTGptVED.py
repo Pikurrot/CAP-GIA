@@ -8,7 +8,7 @@ from src.DatasetCaption import explode_caption_lst
 from transformers import AutoImageProcessor, VisionEncoderDecoderModel, GPT2TokenizerFast, GenerationConfig
 import evaluate
 from typing import Literal
-from peft import LoraConfig, get_peft_model, TaskType, EvaConfig
+from peft import LoraConfig, get_peft_model, TaskType#, EvaConfig, initialize_lora_eva_weights
 
 def distinct_ngrams(predictions, n=1):
 	ngrams = set()
@@ -40,34 +40,18 @@ class ViTGptVED(nn.Module):
 		self.contrastive_criterion = nn.CosineEmbeddingLoss()
 
 		# LoRA
-		target_modules_encoder = [
-			# Attention layers
-			"encoder.encoder.layer.*.attention.attention.query",
-			"encoder.encoder.layer.*.attention.attention.key", 
-			"encoder.encoder.layer.*.attention.attention.value",
-			"encoder.encoder.layer.*.attention.output.dense"
-		]
-		target_modules_decoder = [
-			# Main attention layers
-			"decoder.transformer.h.*.attn.c_attn",
-			"decoder.transformer.h.*.attn.c_proj",
-			
-			# Cross-attention layers
-			"decoder.transformer.h.*.crossattention.c_attn",
-			"decoder.transformer.h.*.crossattention.c_proj",
-			
-			# MLP layers
-			"decoder.transformer.h.*.mlp.c_fc",
-			"decoder.transformer.h.*.mlp.c_proj"
-		]
+		def print_module_names(model):
+			for name, _ in model.named_parameters():
+				print(name)
+		print_module_names(self.VED)
 		lora_config = LoraConfig(
 			r=16,
 			lora_alpha=32,
-			target_modules=target_modules_encoder + target_modules_decoder,
+			target_modules="all-linear",
 			lora_dropout=0.1,
 			task_type=TaskType.SEQ_2_SEQ_LM,
 			init_lora_weights="gaussian",
-			eva_config = EvaConfig(rho = 2.0),
+			# eva_config = EvaConfig(rho = 2.0),
 		)
 		self.VED = get_peft_model(
 			model=self.VED,
@@ -222,8 +206,8 @@ def train_ViTGptVED(
 					# Log cosine similarity
 					wandb.log({"image-text_cosine_sim": cos_sim})
 
-		if scheduler:
-			scheduler.step()
+			if scheduler:
+				scheduler.step()
 
 		# Evaluate training
 		print("Evaluating training set...")

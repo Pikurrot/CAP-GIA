@@ -10,8 +10,9 @@ from src.DinoSmolLM import DinoSmolLM, train_DinoSmolLM
 from src.ViTGpt import ViTGpt, train_ViTGpt
 from src.ViTGptVED import ViTGptVED, train_ViTGptVED
 from src.DinoGptVED import DinoGptVED, train_DinoGptVED
-from src.DatasetCaption import FlickrDataset, ReceipesDataset, collate_fn_lst
+from src.DatasetCaption import ReceipesDataset, collate_fn_lst
 from datetime import datetime
+from transformers import get_linear_schedule_with_warmup
 
 log_wandb = True
 
@@ -78,27 +79,36 @@ def train(
 
 	# Prepare the training configuration
 	print("Training model...")
+	total_training_steps = len(train_loader) * config["epochs"]
+	warmup_steps = int(0.1 * total_training_steps) 
 	optimizer_name = config["optimizer"]
 	if model_name.endswith("VED"):
 		optimizer = getattr(torch.optim, optimizer_name)(
 			model.parameters(),
-			lr=config["lr"]
+			lr=config["lr"],
+			weight_decay=config["weight_decay"]
 		)
 	else:
 		optimizer = getattr(torch.optim, optimizer_name)(
 			[{"params": model.encoder.parameters(), "lr": config["lr"], "name": "encoder"},	
 			{"params": model.proj.parameters(), "lr": config["lr"], "name": "proj"},
 			{"params": model.decoder.parameters(), "lr": config["lr"], "name": "decoder"}],
-			weight_decay=0.01,
-			num_warmup_steps=100
+			weight_decay=config["weight_decay"]
 		)
 	scheduler_conf = config["scheduler"]
 	if scheduler_conf is not None:
 		scheduler_name = scheduler_conf["name"]
-		scheduler = getattr(torch.optim.lr_scheduler, scheduler_name)(
-			optimizer,
-			**{k: v for k, v in scheduler_conf.items() if k != "name"}
-		)
+		if scheduler_name == "LinearWarmup":
+			scheduler = get_linear_schedule_with_warmup(
+				optimizer,
+				num_warmup_steps=warmup_steps,
+				num_training_steps=total_training_steps
+			)
+		else:
+			scheduler = getattr(torch.optim.lr_scheduler, scheduler_name)(
+				optimizer,
+				**{k: v for k, v in scheduler_conf.items() if k != "name"}
+			)
 	else:
 		scheduler = None
 
