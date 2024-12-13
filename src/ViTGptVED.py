@@ -1,8 +1,6 @@
 import wandb
 import torch
 import numpy as np
-import os
-import json
 from torch import nn
 import torch.nn.functional as F
 from torch.nn.init import xavier_uniform_, zeros_
@@ -11,9 +9,7 @@ from src.DatasetCaption import explode_caption_lst
 from transformers import (
 	AutoImageProcessor,
 	VisionEncoderDecoderModel,
-	PreTrainedTokenizerFast,
 	GPT2TokenizerFast,
-	GPT2LMHeadModel,
 	GenerationConfig,
 	ViTConfig,
 	ViTModel
@@ -38,6 +34,33 @@ def custom_init(module):
 		nn.init.ones_(module.weight)
 		nn.init.zeros_(module.bias)
 
+class CharTokenizer:
+	def __init__(self, special_tokens=None):
+		# Define default vocabulary as printable ASCII characters
+		self.vocab = {chr(i): i - 32 for i in range(32, 127)}  # ASCII
+		self.reverse_vocab = {v: k for k, v in self.vocab.items()}
+
+		# Add special tokens
+		if special_tokens:
+			for idx, token in enumerate(special_tokens, start=len(self.vocab)):
+				self.vocab[token] = idx
+				self.reverse_vocab[idx] = token
+
+	def encode(self, text, add_special_tokens=True):
+		tokens = [self.vocab[char] for char in text if char in self.vocab]
+		if add_special_tokens:
+			tokens = [self.vocab["<bos>"]] + tokens + [self.vocab["<eos>"]]
+		return tokens
+
+	def decode(self, token_ids, skip_special_tokens=True):
+		text = "".join(self.reverse_vocab[token] for token in token_ids if token in self.reverse_vocab)
+		if skip_special_tokens:
+			text = text.replace("<bos>", "").replace("<eos>", "")
+		return text
+
+	def get_vocab_size(self):
+		return len(self.vocab)
+
 class ViTGptVED(nn.Module):
 	def __init__(
 			self,
@@ -53,37 +76,33 @@ class ViTGptVED(nn.Module):
 		encoder_config = ViTConfig()
 		new_encoder = ViTModel(encoder_config)
 		self.VED.encoder = new_encoder
+
+		# Apply custom initialization to encoder
 		self.VED.encoder.apply(custom_init)
-		self.encoder_processor = AutoImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
-		
+
+		self.encoder_processor = AutoImageProcessor.from_pretrained(
+			"nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir
+		)
+
+		# Character-level Tokenizer Integration
 		if char_level:
-			vocab_file = "char_vocab.json"
-			if os.path.exists(os.path.join(output_dir, vocab_file)):
-				with open(vocab_file, "r") as f:
-					char_vocab = json.load(f)
-			else:
-				char_vocab = [chr(i) for i in range(32, 127)]  # ASCII characters (printable)
-				special_tokens = ["<pad>", "<bos>", "<eos>"]
-				char_vocab.extend(special_tokens)
-				with open(vocab_file, "w") as f:
-					json.dump({char: idx for idx, char in enumerate(char_vocab)}, f)
-			self.decoder_tokenizer = PreTrainedTokenizerFast(
-                tokenizer_object=None,
-                vocab_file=vocab_file,
-                unk_token=None,
-                pad_token="<pad>",
-                bos_token="<bos>",
-                eos_token="<eos>"
-            )
+			# Custom character-level tokenizer
+			special_tokens = ["<pad>", "<bos>", "<eos>"]
+			self.decoder_tokenizer = CharTokenizer(special_tokens=special_tokens)
+
+			# Update decoder configuration
 			decoder_config = self.VED.decoder.config
-			decoder_config.vocab_size = len(self.decoder_tokenizer)
-			self.VED.decoder = GPT2LMHeadModel(decoder_config)
-			self.VED.config.pad_token_id = self.decoder_tokenizer.pad_token_id
-			self.VED.config.bos_token_id = self.decoder_tokenizer.bos_token_id
-			self.VED.config.eos_token_id = self.decoder_tokenizer.eos_token_id
+			decoder_config.vocab_size = self.decoder_tokenizer.get_vocab_size()
+			self.VED.decoder.resize_token_embeddings(decoder_config.vocab_size)
+
+			# Set special tokens in the model configuration
+			self.VED.config.pad_token_id = self.decoder_tokenizer.vocab["<pad>"]
+			self.VED.config.bos_token_id = self.decoder_tokenizer.vocab["<bos>"]
+			self.VED.config.eos_token_id = self.decoder_tokenizer.vocab["<eos>"]
 		else:
-			self.decoder_tokenizer = GPT2TokenizerFast.from_pretrained("nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir)
-			# Add special tokens
+			self.decoder_tokenizer = GPT2TokenizerFast.from_pretrained(
+				"nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir
+			)
 			self.decoder_tokenizer.pad_token = self.decoder_tokenizer.eos_token
 			self.VED.config.pad_token_id = self.decoder_tokenizer.pad_token_id
 			self.VED.config.decoder_start_token_id = self.decoder_tokenizer.bos_token_id
@@ -120,40 +139,31 @@ class ViTGptVED(nn.Module):
 
 	def forward(
 			self,
-			images: list, # PIL images
+			images: list,  # PIL images
 			captions: list[str] = None,
-			max_new_tokens: int=20,
-			temperature: float=0.7,
-			repetition_penalty: float=2.0,
-			length_penalty: float=3.0,
-			lambda_contrastive: float=10.0, # Contrastive loss weight
+			max_new_tokens: int = 20,
+			temperature: float = 0.7,
+			repetition_penalty: float = 2.0,
+			length_penalty: float = 3.0,
+			lambda_contrastive: float = 10.0,  # Contrastive loss weight
 			inference_mode: Literal["sampling", "beam_search"] = "beam_search",
-			n_beams: int=5,
-			top_k: int=50,
-			top_p: float=0.95
+			n_beams: int = 5,
+			top_k: int = 50,
+			top_p: float = 0.95
 	):
 		device = next(self.parameters()).device
-
-		# Encode images with ViT
 		pixel_values = self.encoder_processor(images, return_tensors="pt").pixel_values.to(device)
 
 		if captions is not None:
 			# Training/Validation Mode
-
-			# Encode captions with GPT-2
-			encodings = self.decoder_tokenizer(captions, return_tensors='pt', padding=True, truncation=True)
-			labels = encodings.input_ids.to(device)
-			attention_mask = encodings.attention_mask.to(device)
-			labels[attention_mask == 0] = -100
+			labels = [self.decoder_tokenizer.encode(caption) for caption in captions]
+			max_len = max(len(label) for label in labels)
+			labels = [label + [self.decoder_tokenizer.vocab["<pad>"]] * (max_len - len(label)) for label in labels]
+			labels = torch.tensor(labels).to(device)
+			labels[labels == self.decoder_tokenizer.vocab["<pad>"]] = -100
 
 			# Compute cross-entropy loss
-			encoder_outputs = self.VED.encoder(pixel_values)
-			outputs = self.VED(
-				encoder_outputs=encoder_outputs,
-				labels=labels,
-				decoder_attention_mask=attention_mask,
-				output_hidden_states=True
-			)
+			outputs = self.VED(pixel_values=pixel_values, labels=labels, output_hidden_states=True)
 			ce_loss = outputs.loss
 
 			# Compute contrastive loss
@@ -169,7 +179,6 @@ class ViTGptVED(nn.Module):
 
 		else:
 			# Inference Mode
-			# https://huggingface.co/docs/transformers/main_classes/text_generation
 			generation_config = GenerationConfig(
 				max_new_tokens=max_new_tokens,
 				temperature=temperature,
@@ -179,16 +188,11 @@ class ViTGptVED(nn.Module):
 				num_beams=n_beams if inference_mode == "beam_search" else 1,
 				top_k=top_k,
 				top_p=top_p,
-				pad_token_id=self.decoder_tokenizer.pad_token_id,
-				eos_token_id=self.decoder_tokenizer.eos_token_id,
+				pad_token_id=self.decoder_tokenizer.vocab["<pad>"],
+				eos_token_id=self.decoder_tokenizer.vocab["<eos>"],
 			)
-			encodings = self.decoder_tokenizer([""], return_tensors='pt')  # Empty input or BOS
-			attention_mask = encodings.attention_mask.to(device)
-			outputs = self.VED.generate(
-				pixel_values=pixel_values,
-				generation_config=generation_config
-			)
-			generated_texts = self.decoder_tokenizer.batch_decode(outputs, skip_special_tokens=True)
+			outputs = self.VED.generate(pixel_values=pixel_values, generation_config=generation_config)
+			generated_texts = [self.decoder_tokenizer.decode(output) for output in outputs]
 			return generated_texts
 		
 
