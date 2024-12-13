@@ -46,8 +46,7 @@ class ViTGptVED(nn.Module):
 			target_modules=[
 				"attention.query",
 				"attention.key",
-				"attention.query",
-				"attention.key",
+				"attention.value"
 			],
 			lora_dropout=0.1,
 			task_type=TaskType.SEQ_2_SEQ_LM,
@@ -100,8 +99,7 @@ class ViTGptVED(nn.Module):
 			outputs = self.VED(
 				pixel_values=pixel_values,
 				labels=labels,
-				decoder_attention_mask=attention_mask,
-				output_hidden_states=True
+				decoder_attention_mask=attention_mask
 			)
 			ce_loss = outputs.loss
 
