@@ -10,7 +10,7 @@ from src.DinoSmolLM import DinoSmolLM, train_DinoSmolLM
 from src.ViTGpt import ViTGpt, train_ViTGpt
 from src.ViTGptVED import ViTGptVED, train_ViTGptVED
 from src.DinoGptVED import DinoGptVED, train_DinoGptVED
-from src.DatasetCaption import ReceipesDataset, collate_fn_lst
+from src.DatasetCaption import Food500CapDataset, collate_fn_lst
 from datetime import datetime
 from transformers import get_linear_schedule_with_warmup
 
@@ -39,8 +39,8 @@ def train(
 	# Prepare the dataset
 	print("Preparing dataset...")
 	data_path = os.path.join(kwargs["data_dir"], "food500cap/ISIA_Food500")
-	train_set = ReceipesDataset(data_path, split="train", data_size=kwargs["data_size"], return_img_path=True)
-	val_set = ReceipesDataset(data_path, split="val", data_size=kwargs["data_size"], return_img_path=True)
+	train_set = Food500CapDataset(data_path, split="train", data_size=kwargs["data_size"], return_img_path=True)
+	val_set = Food500CapDataset(data_path, split="val", data_size=kwargs["data_size"], return_img_path=True)
 	train_loader = DataLoader(
 		train_set,
 		batch_size=config["batch_size"],
