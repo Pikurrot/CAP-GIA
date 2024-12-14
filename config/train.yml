@@ -1,6 +1,6 @@
 model: ViT-GPT-VED
 batch_size: 32
-epochs: 50
+epochs: 2
 lr: 0.0005
 optimizer: AdamW
 weight_decay: 0.01

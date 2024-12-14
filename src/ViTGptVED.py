@@ -45,7 +45,10 @@ class ViTGptVED(nn.Module):
 		self.VED = VisionEncoderDecoderModel.from_pretrained(
 			"nlpconnect/vit-gpt2-image-captioning", cache_dir=output_dir
 		)
-		encoder_config = ViTConfig()
+		encoder_config = ViTConfig(
+			patch_size=32,
+			encoder_stride=32
+		)
 		new_encoder = ViTModel(encoder_config)
 		self.VED.encoder = new_encoder
 		self.VED.encoder.apply(custom_init)
