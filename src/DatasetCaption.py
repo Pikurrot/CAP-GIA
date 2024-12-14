@@ -189,7 +189,7 @@ class Food500CapDataset(Dataset):
 		test_cap_data = test_cap_data[test_cap_data["filename"].apply(lambda x: os.path.exists(os.path.join(self.img_path, x)))]
 
 		# Split data
-		total_size = len(self.cap_data)
+		total_size = len(train_cap_data)
 		train_end = int(split_size[0] * total_size)
 
 		if split == "train":
