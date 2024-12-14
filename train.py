@@ -38,7 +38,7 @@ def train(
 
 	# Prepare the dataset
 	print("Preparing dataset...")
-	data_path = os.path.join(kwargs["data_dir"], "receipes")
+	data_path = os.path.join(kwargs["data_dir"], "food500cap/ISIA_Food500")
 	train_set = ReceipesDataset(data_path, split="train", data_size=kwargs["data_size"], return_img_path=True)
 	val_set = ReceipesDataset(data_path, split="val", data_size=kwargs["data_size"], return_img_path=True)
 	train_loader = DataLoader(
@@ -53,6 +53,8 @@ def train(
 		shuffle=False,
 		collate_fn=collate_fn_lst
 	)
+	print(f"Train set size: {len(train_set)}")
+	print(f"Val set size: {len(val_set)}")
 
 	# Prepare the model
 	print(f"Preparing model {model_name}...")

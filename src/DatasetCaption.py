@@ -122,17 +122,6 @@ class ReceipesDataset(Dataset):
 		self.cap_data = self.cap_data[self.cap_data["Title"].apply(lambda x: len(x.split()) > 0)]
 		self.cap_data = self.cap_data[self.cap_data["Image_Name"].apply(lambda x: x != "#NAME?")]
 
-		# Create vocabulary
-		# self.vocab = set()
-		# for caption in self.cap_data["Title"]: # TODO: Add other columns
-		# 	self.vocab.update(caption.split())
-		# self.special_tokens = ['<start>', '<end>', '<pad>', '<unk>']
-		# self.vocab.update(self.special_tokens)
-		# self.vocab = sorted(self.vocab)
-		# self.word2idx = {word: idx for idx, word in enumerate(self.vocab)}
-		# self.idx2word = {idx: word for word, idx in self.word2idx.items()}
-		# self.vocab_size = len(self.vocab)
-
 		# Split data
 		total_size = len(self.cap_data)
 		train_end = int(split_size[0] * total_size)
@@ -164,6 +153,63 @@ class ReceipesDataset(Dataset):
 		if self.transform_image:
 			image = transform(image)
 		caption = self.cap_data.iloc[idx, 1]
+		if self.return_img_path:
+			return image, caption, img_name
+		return image, caption
+
+
+class Food500CapDataset(Dataset):
+	def __init__(
+			self,
+			data_path: str,
+			transform_image: bool = False,
+			split: Literal["train", "val", "test"] = "train",
+			split_size: list = [0.8, 0.2], # [train, val]
+			data_size: int=1.0,
+			return_img_path: bool = False
+	):
+		super(Food500CapDataset, self).__init__()
+		self.img_path = os.path.join(data_path, 'images')
+		self.train_cap_path = os.path.join(data_path, "finetune_data.json")
+		self.test_cap_path = os.path.join(data_path, "evaluation_data.json")
+		train_cap_data = pd.read_json(self.train_cap_path)
+		test_cap_data = pd.read_json(self.test_cap_path)
+		self.transform_image = transform_image
+		self.split = split
+		self.return_img_path = return_img_path
+
+		# Clean data
+		train_cap_data = train_cap_data.dropna(subset=["caption"])
+		train_cap_data = train_cap_data[train_cap_data["caption"].apply(lambda x: len(x.split()) > 0)]
+		test_cap_data = test_cap_data.dropna(subset=["caption"])
+		test_cap_data = test_cap_data[test_cap_data["caption"].apply(lambda x: len(x.split()) > 0)]
+
+		# Keep only data whose images exist
+		train_cap_data = train_cap_data[train_cap_data["filename"].apply(lambda x: os.path.exists(os.path.join(self.img_path, x)))]
+		test_cap_data = test_cap_data[test_cap_data["filename"].apply(lambda x: os.path.exists(os.path.join(self.img_path, x)))]
+
+		# Split data
+		total_size = len(self.cap_data)
+		train_end = int(split_size[0] * total_size)
+
+		if split == "train":
+			self.cap_data = train_cap_data[:train_end]
+		elif split == "val":
+			self.cap_data = train_cap_data[train_end:]
+		elif split == "test":
+			self.cap_data = test_cap_data
+
+		self.cap_data = self.cap_data.sample(frac=data_size, random_state=42)
+
+	def __len__(self):
+		return len(self.cap_data)
+	
+	def __getitem__(self, idx):
+		img_name = os.path.join(self.img_path, self.cap_data.iloc[idx, 1])
+		image = Image.open(img_name).convert('RGB')
+		if self.transform_image:
+			image = transform(image)
+		caption = self.cap_data.iloc[idx, 2]
 		if self.return_img_path:
 			return image, caption, img_name
 		return image, caption
