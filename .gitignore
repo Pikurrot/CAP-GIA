@@ -170,3 +170,6 @@ temp.ipynb
 wandb
 data
 model_resources
+checkpoints
+last_model_saved
+generation_examples

@@ -9,8 +9,10 @@ from torchvision import transforms
 from transformers import AutoModelForVision2Seq, AutoProcessor
 from peft import LoraConfig, get_peft_model
 import wandb
-from evaluate import load as load_metric
+import evaluate  
 from typing import Literal
+
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 
 # Clase ReceipesDataset
@@ -22,6 +24,9 @@ class ReceipesDataset(Dataset):
         split: Literal["train", "val", "test"] = "train",
         split_size: list = [0.7, 0.1, 0.2],
         data_size: float = 1.0,
+        processor = AutoProcessor.from_pretrained("model_resources")
+    
+
     ):
         super(ReceipesDataset, self).__init__()
         self.img_path = os.path.join(data_path, "FoodImages", "Food Images")
@@ -31,7 +36,8 @@ class ReceipesDataset(Dataset):
         self.cap_data = pd.read_csv(self.cap_path)
         self.transform_image = transform_image
         self.split = split
-
+        self.processor = processor 
+        
         # Limpieza de datos
         self.cap_data = self.cap_data.dropna(subset=["Title"])
         self.cap_data = self.cap_data[
@@ -65,16 +71,24 @@ class ReceipesDataset(Dataset):
         if self.transform_image:
             image = transform(image)
         caption = self.cap_data.iloc[idx]["Title"]
-        return image, caption
+        encoding = self.processor(images = image , text= caption, padding= "max_length", return_tensors= "pt")
+        encoding = {k:v.squeeze() for k,v in encoding.items()}
+        return encoding
 
+transform = transforms.Compose([
+	transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+])
 
-# Transformaciones de imágenes
-transform = transforms.Compose(
-    [
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-    ]
-)
+"""
+transform = transforms.Compose([
+	transforms.Resize((224, 224)),
+	transforms.ToTensor(),
+	transforms.Normalize(mean=[0.485, 0.456, 0.406],
+						 std=[0.229, 0.224, 0.225])
+])
+"""
+
 
 # Configuración del modelo BLIP
 model_id = "model_resources"
@@ -107,61 +121,61 @@ model = get_peft_model(model, config)
 model.print_trainable_parameters()
 
 # Inicialización del dataset
-data_path = "/fhome/vlia01/caption_data/receipes"
-train_dataset = ReceipesDataset(data_path=data_path, transform_image=True, split="train")
-val_dataset = ReceipesDataset(data_path=data_path, transform_image=True, split="val")
-
-# Collate Function para BLIP
-def collator(batch):
-    images, captions = zip(*batch)
-    image_inputs = processor(images=list(images), return_tensors="pt", padding=True)
-    text_inputs = processor.tokenizer(
-        list(captions), padding=True, return_tensors="pt"
-    )
-    return {
-        "pixel_values": image_inputs["pixel_values"].to(device),
-        "input_ids": text_inputs["input_ids"].to(device),
-        "attention_mask": text_inputs["attention_mask"].to(device),
-    }
-
+data_path = "/home/ldomene/caption_data/receipes"
+train_dataset = ReceipesDataset(data_path=data_path, transform_image=False, split="train")
+val_dataset = ReceipesDataset(data_path=data_path, transform_image=False, split="val")
 
 # DataLoader
 train_dataloader = DataLoader(
-    train_dataset, shuffle=True, batch_size=4, collate_fn=collator
+    train_dataset, shuffle=True, batch_size=5
 )
 val_dataloader = DataLoader(
-    val_dataset, shuffle=False, batch_size=4, collate_fn=collator
+    val_dataset, shuffle=False, batch_size=5
 )
 
 # Optimización
 optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
 
 # Inicialización de WandB
+print("Wandb Iinitialization")
+from dotenv import load_dotenv
+# Load config
+load_dotenv()
+wandb_key = os.getenv("WANDB_KEY")
+wandb.login(key=wandb_key)
+
 wandb.init(
-    project="blip-finetuning",
+    project="CAP-GIA",
     config={
         "epochs": 10,
-        "batch_size": 4,
+        "batch_size": 24,
         "learning_rate": 1e-4,
     },
 )
 
+config = wandb.config
+
 # Métricas
-bleu = load_metric("bleu")
-meteor = load_metric("meteor")
-rouge = load_metric("rouge")
+bleu = evaluate.load("bleu")
+meteor = evaluate.load("meteor")
+rouge = evaluate.load("rouge")
 
 # Entrenamiento
-config = wandb.config
-model.train()
+print("Start Training")
+
+# Directory to save checkpoints
+checkpoint_dir = "./checkpoints"
+os.makedirs(checkpoint_dir, exist_ok=True)
+
+print("Start Training")
 for epoch in range(config.epochs):
     print(f"Epoch {epoch + 1}")
     total_loss = 0
 
     for idx, batch in enumerate(train_dataloader):
-        input_ids = batch["input_ids"]
-        pixel_values = batch["pixel_values"]
-        attention_mask = batch["attention_mask"]
+        input_ids = batch["input_ids"].to(device)
+        pixel_values = batch["pixel_values"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
 
         outputs = model(
             input_ids=input_ids,
@@ -179,15 +193,16 @@ for epoch in range(config.epochs):
 
         wandb.log({"batch_loss": loss.item(), "epoch": epoch + 1})
 
-    # Evaluación
+    # Evaluation
     model.eval()
     predictions = []
     references = []
+    images = []
 
     with torch.no_grad():
         for val_batch in val_dataloader:
-            val_pixel_values = val_batch["pixel_values"]
-            val_input_ids = val_batch["input_ids"]
+            val_pixel_values = val_batch["pixel_values"].to(device)
+            val_input_ids = val_batch["input_ids"].to(device)
 
             generated_output = model.generate(
                 pixel_values=val_pixel_values, max_new_tokens=64
@@ -198,6 +213,7 @@ for epoch in range(config.epochs):
             references.extend(
                 processor.batch_decode(val_input_ids, skip_special_tokens=True)
             )
+            images.extend(val_pixel_values.cpu())  # Save images for visualization
 
     res_bleu_1 = bleu.compute(
         predictions=predictions, references=[[ref] for ref in references], max_order=1
@@ -227,13 +243,47 @@ for epoch in range(config.epochs):
         }
     )
 
+    # Save checkpoint
+    checkpoint_path = os.path.join(checkpoint_dir, f"epoch_{epoch + 1}.pth")
+    torch.save(
+        {
+            "epoch": epoch + 1,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "loss": avg_train_loss,
+        },
+        checkpoint_path,
+    )
+    print(f"Checkpoint saved: {checkpoint_path}")
+
+    # Log example predictions in wandb every two epochs
+    if (epoch + 1) % 2 == 0:
+        example_logs = []
+        num_examples = min(5, len(images))  # Number of examples to log
+        for i in range(num_examples):
+            # Prepare the image and captions
+            image = images[i].permute(1, 2, 0).numpy()  # Convert to HWC format
+            prediction = predictions[i]
+            ground_truth = references[i]
+            example_logs.append(
+                wandb.Image(
+                    image,
+                    caption=f"Prediction: {prediction}\nGround Truth: {ground_truth}",
+                )
+            )
+        
+        wandb.log({f"Examples (Epoch {epoch + 1})": example_logs})
+
     model.train()
+print("Finish Training")
+
 
 # Guardar modelo
-os.makedirs("/fhome/vlia01/CAP-GIA/blip/model", exist_ok=True)
-model.save_pretrained("/fhome/vlia01/CAP-GIA/blip/model")
+os.makedirs("/home/ldomene/CAP-GIA/blip", exist_ok=True)
+model.save_pretrained("/home/ldomene/CAP-GIA/blip/model")
+
 artifact = wandb.Artifact("blip-finetuned-model", type="model")
-artifact.add_dir("/fhome/vlia01/CAP-GIA/blip/model")
+artifact.add_dir("/home/ldomene/CAP-GIA/blip/model")
 wandb.log_artifact(artifact)
 
 wandb.finish()
