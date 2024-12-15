@@ -65,7 +65,7 @@ class ReceipesDataset(Dataset):
         if self.transform_image:
             image = transform(image)
         caption = self.cap_data.iloc[idx]["Title"]
-        encoding = self.processor(images = image , text= caption, padding= "max_length", return_tensors= "pt")
+        encoding = self.processor(images = image , text = caption, padding= "max_length", return_tensors= "pt")
         encoding = {k:v.squeeze() for k,v in encoding.items()}
         return encoding
 
