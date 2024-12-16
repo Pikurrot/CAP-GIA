@@ -90,10 +90,10 @@ transform = transforms.Compose([
 model_id = "model_resources"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-model = AutoModelForVision2Seq.from_pretrained(model_id)
+model = AutoModelForVision2Seq.from_pretrained(model_id, cache_dir="/data3fast/users/elopez/models")
 model.to(device)
 
-processor = AutoProcessor.from_pretrained(model_id)
+processor = AutoProcessor.from_pretrained(model_id, cache_dir="/data3fast/users/elopez/models")
 
 # Configuración PEFT
 config = LoraConfig(
@@ -160,7 +160,7 @@ rouge = evaluate.load("rouge")
 print("Start Training")
 
 # Directory to save checkpoints
-checkpoint_dir = "./checkpoints"
+checkpoint_dir = "/data3fast/users/elopez/checkpoints"
 os.makedirs(checkpoint_dir, exist_ok=True)
 
 print("Start Training")

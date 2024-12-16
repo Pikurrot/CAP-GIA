@@ -100,8 +100,8 @@ from transformers import AutoProcessor, Blip2ForConditionalGeneration, BitsAndBy
 
 quant_config = BitsAndBytesConfig(load_in_8bit=True)
 
-processor = AutoProcessor.from_pretrained("Salesforce/blip2-opt-2.7b")
-model = Blip2ForConditionalGeneration.from_pretrained("ybelkada/blip2-opt-2.7b-fp16-sharded", device_map="auto", quantization_config=quant_config)
+processor = AutoProcessor.from_pretrained("Salesforce/blip2-opt-2.7b", cache_dir="/data3fast/users/elopez/models")
+model = Blip2ForConditionalGeneration.from_pretrained("ybelkada/blip2-opt-2.7b-fp16-sharded", device_map="auto", quantization_config=quant_config, cache_dir="/data3fast/users/elopez/models")
 
 # Configuración del modelo BLIP
 
@@ -166,7 +166,7 @@ rouge = evaluate.load("rouge")
 print("Start Training")
 
 # Directory to save checkpoints
-checkpoint_dir = "./checkpoints"
+checkpoint_dir = "/data3fast/users/elopez/checkpoints"
 os.makedirs(checkpoint_dir, exist_ok=True)
 
 print("Start Training")
