@@ -87,7 +87,7 @@ transform = transforms.Compose([
 
 
 # Configuración del modelo BLIP
-model_id = "model_resources"
+model_id = "Salesforce/blip-image-captioning-base"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 model = AutoModelForVision2Seq.from_pretrained(model_id, cache_dir="/data3fast/users/elopez/models")
