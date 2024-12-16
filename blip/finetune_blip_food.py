@@ -23,7 +23,8 @@ class Food500CapDataset(Dataset):
 			split: Literal["train", "val", "test"] = "train",
 			split_size: list = [0.8, 0.2], # [train, val]
 			data_size: int=1.0,
-			return_img_path: bool = False
+			return_img_path: bool = False,
+			processor = AutoProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
 	):
 		super(Food500CapDataset, self).__init__()
 		self.img_path = os.path.join(data_path, 'images')
@@ -34,6 +35,7 @@ class Food500CapDataset(Dataset):
 		self.transform_image = transform_image
 		self.split = split
 		self.return_img_path = return_img_path
+		self.processor = processor
 
 		# Clean data
 		train_cap_data = train_cap_data.dropna(subset=["caption"])
@@ -67,9 +69,9 @@ class Food500CapDataset(Dataset):
 		if self.transform_image:
 			image = transform(image)
 		caption = self.cap_data.iloc[idx, 2]
-		if self.return_img_path:
-			return image, caption, img_name
-		return image, caption
+		encoding = self.processor(images = image , text= caption, padding= "max_length", return_tensors= "pt")
+		encoding = {k:v.squeeze() for k,v in encoding.items()}
+		return encoding
 
 transform = transforms.Compose([
 	transforms.Resize((224, 224)),
