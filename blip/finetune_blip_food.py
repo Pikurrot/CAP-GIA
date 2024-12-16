@@ -2,7 +2,7 @@ import os
 import torch
 import torch.optim as optim
 import pandas as pd
-from PIL import Image
+from PIL import Image, ImageFile
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from transformers import AutoModelForVision2Seq, AutoProcessor
@@ -13,6 +13,7 @@ from typing import Literal
 from dotenv import load_dotenv
 
 os.environ["CUDA_VISIBLE_DEVICES"]="1"
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 class Food500CapDataset(Dataset):
@@ -24,7 +25,7 @@ class Food500CapDataset(Dataset):
 			split_size: list = [0.8, 0.2], # [train, val]
 			data_size: int=1.0,
 			return_img_path: bool = False,
-			processor = AutoProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+			processor = AutoProcessor.from_pretrained("Salesforce/blip-image-captioning-base", cache_dir="/data3fast/users/elopez/models")
 	):
 		super(Food500CapDataset, self).__init__()
 		self.img_path = os.path.join(data_path, 'images')

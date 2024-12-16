@@ -3,7 +3,7 @@ import torch
 import torch.optim as optim
 import numpy as np
 import pandas as pd
-from PIL import Image
+from PIL import Image, ImageFile
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from transformers import AutoModelForVision2Seq, AutoProcessor
@@ -17,6 +17,7 @@ from transformers import Blip2Processor
 MAX_LENGTH = 77
 
 os.environ["CUDA_VISIBLE_DEVICES"]="2,3,4,5"
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 class Food500CapDataset(Dataset):
@@ -28,7 +29,7 @@ class Food500CapDataset(Dataset):
 			split_size: list = [0.8, 0.2], # [train, val]
 			data_size: int=1.0,
 			return_img_path: bool = False,
-			processor = AutoProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+			processor = AutoProcessor.from_pretrained("Salesforce/blip2-opt-2.7b", cache_dir="/data3fast/users/elopez/models")
 	):
 		super(Food500CapDataset, self).__init__()
 		self.img_path = os.path.join(data_path, 'images')
@@ -151,7 +152,7 @@ wandb.login(key=wandb_key)
 wandb.init(
     project="CAP-GIA",
     config={
-        "epochs": 10,
+        "epochs": 5,
         "batch_size": 15,
         "learning_rate": 5e-4,
     },
