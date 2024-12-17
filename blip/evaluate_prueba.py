@@ -79,12 +79,9 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 # Load the pre-trained model from the checkpoint 5 which is the best checkpoint
-model_finetuned = AutoModelForVision2Seq.from_pretrained("model_resources")
+model_finetuned = AutoModelForVision2Seq.from_pretrained("/home/ldomene/CAP-GIA/blip/checkpoints/epoch_4")
 model_finetuned.to(device)
 
-checkpoint_path = "/home/ldomene/CAP-GIA/blip/checkpoints/epoch_5.pth"
-state_dict = torch.load(checkpoint_path, map_location=device,weights_only=True)
-model_finetuned.load_state_dict(state_dict, strict=False)
 
 
 bleu = evaluate.load("bleu")

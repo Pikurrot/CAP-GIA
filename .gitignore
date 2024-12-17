@@ -174,3 +174,6 @@ checkpoints
 last_model_saved
 generation_examples
 test_real
+generation_examples_zero_shot
+model
+eric_images

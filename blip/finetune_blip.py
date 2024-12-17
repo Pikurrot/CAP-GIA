@@ -147,8 +147,8 @@ wandb.login(key=wandb_key)
 wandb.init(
     project="CAP-GIA",
     config={
-        "epochs": 10,
-        "batch_size": 24,
+        "epochs": 8,
+        "batch_size": 5,
         "learning_rate": 1e-4,
     },
 )
@@ -243,7 +243,7 @@ for epoch in range(config.epochs):
         }
     )
 
-    # Save checkpoint
+    """# Save checkpoint
     checkpoint_path = os.path.join(checkpoint_dir, f"epoch_{epoch + 1}.pth")
     torch.save(
         {
@@ -254,7 +254,11 @@ for epoch in range(config.epochs):
         },
         checkpoint_path,
     )
-    print(f"Checkpoint saved: {checkpoint_path}")
+    print(f"Checkpoint saved: {checkpoint_path}")"""
+
+    #Save model using model.save_pretrained
+    path = f"/home/ldomene/CAP-GIA/blip/checkpoints/epoch_{epoch + 1}"
+    model.save_pretrained(path)
 
     # Log example predictions in wandb every two epochs
     if (epoch + 1) % 2 == 0:

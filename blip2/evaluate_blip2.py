@@ -108,15 +108,12 @@ processor = AutoProcessor.from_pretrained("Salesforce/blip2-opt-2.7b")
 
 # First load base model
 model_finetuned = Blip2ForConditionalGeneration.from_pretrained(
-    "Salesforce/blip2-opt-2.7b",
+    "/home/ldomene/CAP-GIA/blip2/checkpoints/epoch_5",
     device_map="auto",
     quantization_config=quant_config
 )
 
-# Then load your fine-tuned weights
-checkpoint_path = "/home/ldomene/CAP-GIA/blip2/checkpoints/epoch_5/pytorch_model.bin"
-state_dict = torch.load(checkpoint_path, map_location=device,weights_only=True)
-model_finetuned.load_state_dict(state_dict, strict=False)
+
 data_path = "/home/ldomene/caption_data/receipes"
 
 test_dataset = ReceipesDataset(data_path=data_path, transform_image=False, split="test")

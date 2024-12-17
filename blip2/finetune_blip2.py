@@ -16,7 +16,7 @@ from transformers import Blip2Processor
 
 MAX_LENGTH = 77
 
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+os.environ["CUDA_VISIBLE_DEVICES"]="2,3"
 
 
 # Clase ReceipesDataset
@@ -158,8 +158,8 @@ wandb.login(key=wandb_key)
 wandb.init(
     project="CAP-GIA",
     config={
-        "epochs": 10,
-        "batch_size": 15,
+        "epochs": 6,
+        "batch_size": 10,
         "learning_rate": 5e-4,
     },
 )
@@ -254,7 +254,7 @@ for epoch in range(config.epochs):
         }
     )
 
-    # Save checkpoint
+    """# Save checkpoint
     checkpoint_path = os.path.join(checkpoint_dir, f"epoch_{epoch + 1}.pth")
     torch.save(
         {
@@ -265,7 +265,11 @@ for epoch in range(config.epochs):
         },
         checkpoint_path,
     )
-    print(f"Checkpoint saved: {checkpoint_path}")
+    print(f"Checkpoint saved: {checkpoint_path}")"""
+
+    #Save model using model.save_pretrained
+    path = f"/home/ldomene/CAP-GIA/blip2/checkpoints/epoch_{epoch + 1}"
+    model.save_pretrained(path)
 
     # Log example predictions in wandb every two epochs
     if (epoch + 1) % 2 == 0:
