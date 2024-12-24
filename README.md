@@ -3,7 +3,7 @@ Image Captioning project for the Vision and Learning Subject of our AI Degree.
 
 In this project, we implement a model that generates captions for images of food. The dataset can be found on [Kaggle](https://www.kaggle.com/datasets/pes12017000148/food-ingredients-and-recipe-dataset-with-images), it's a recipe dataset, where the Title (the caption we aim to generate) is the name of the recipe. It is not a trivial task, since many times the title is the technical name of the recipe, rather than a description of the food present in the image.
 
-![food_image](https://storage.googleapis.com/kaggle-datasets-images/1169316/1958932/953e1a653494abd76045a348a7e2d9e3/dataset-cover.jpg?t=2021-02-19-12-27-08)
+![food_image](github-image.jpg)
 
 ## Repository Structure
 This repository contains the code used throughout the project, from the **first baseline models** designed to the final program that uses **the best model we finetunned** to generate captions for images. We also provide the **report** of the project, highlighting the process we followed and the results, and tje slides of the presentation:
