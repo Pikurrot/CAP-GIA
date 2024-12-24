@@ -14,8 +14,6 @@ from src.DatasetCaption import Food500CapDataset, collate_fn_lst
 from datetime import datetime
 from transformers import get_linear_schedule_with_warmup
 
-log_wandb = True
-
 def train(
 		config: dict,
 		**kwargs
@@ -145,16 +143,18 @@ if __name__ == '__main__':
 	parser.add_argument('--out_dir', type=str, default="out")
 	parser.add_argument("--data_dir", type=str, default="")
 	parser.add_argument("--gpu", type=int, default=-1)
-	parser.add_argument("--data_size", type=float, default=0.05)
+	parser.add_argument("--data_size", type=float, default=1.0)
 	args = parser.parse_args()
 	print(args)
 
 	# Load config
-	load_dotenv()
-	wandb_key = os.getenv("WANDB_KEY")
 	with open("config/train.yml", "r") as f:
 		config = yaml.load(f, Loader=yaml.FullLoader)
-	wandb.login(key=wandb_key)
+	if config["log_wandb"]:
+		log_wandb = True
+		load_dotenv()
+		wandb_key = os.getenv("WANDB_KEY")
+		wandb.login(key=wandb_key)
 
 	# Train model on dataset
 	if args.gpu >= 0:
