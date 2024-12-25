@@ -27,6 +27,11 @@ bash process2job.sh
 process2job.bat
 ```
 
+## Finetuned Models
+[BLIP](https://huggingface.co/luisdomene4/BLIP-Finetune-Recipes)
+
+[BLIP2](https://huggingface.co/luisdomene4/BLIP2-Finetune-Recipes)
+
 **Args (Optional):**
 - `--gpu`: The GPU to use. Default is -1 (use all available GPUs). E.g. `--gpu 4`.
 - `--data_size`: The fraction of the dataset to train with. Default is 1.0 (use the whole dataset). E.g. `--data_size 0.25`.
