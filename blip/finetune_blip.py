@@ -91,7 +91,9 @@ transform = transforms.Compose([
 
 
 # Configuración del modelo BLIP
-model_id = "model_resources"
+# Put the path to the model checkpoint you can find it in huggingface luisdomene4/BLIP-Finetune-Recipes
+model_id = "" 
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 model = AutoModelForVision2Seq.from_pretrained(model_id)
@@ -121,7 +123,7 @@ model = get_peft_model(model, config)
 model.print_trainable_parameters()
 
 # Inicialización del dataset
-data_path = "/home/ldomene/caption_data/receipes"
+data_path = ""
 train_dataset = ReceipesDataset(data_path=data_path, transform_image=False, split="train")
 val_dataset = ReceipesDataset(data_path=data_path, transform_image=False, split="val")
 

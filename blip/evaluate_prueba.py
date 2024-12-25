@@ -79,7 +79,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 # Load the pre-trained model from the checkpoint 5 which is the best checkpoint
-model_finetuned = AutoModelForVision2Seq.from_pretrained("/home/ldomene/CAP-GIA/blip/checkpoints/epoch_4")
+model_finetuned = AutoModelForVision2Seq.from_pretrained("CAP-GIA/blip/checkpoints/epoch_4")
 model_finetuned.to(device)
 
 
@@ -94,7 +94,7 @@ references = []
 images = []
 
 # Load the test dataset
-data_path = "/home/ldomene/caption_data/receipes"
+data_path = "caption_data/receipes"
 test_dataset = ReceipesDataset(data_path=data_path, transform_image=False, split="test")
 test_loader = DataLoader(test_dataset, batch_size=5, shuffle=True)
 
@@ -167,7 +167,7 @@ scored_examples = list(zip(example_scores, predictions, references, images))
 scored_examples.sort(key=lambda x: x[0])
 
 # Create output directories
-output_dir = '/home/ldomene/CAP-GIA/blip/generation_examples'
+output_dir = 'CAP-GIA/blip/generation_examples'
 os.makedirs(output_dir, exist_ok=True)
 worst_dir = os.path.join(output_dir, 'worst_5')
 best_dir = os.path.join(output_dir, 'best_5')

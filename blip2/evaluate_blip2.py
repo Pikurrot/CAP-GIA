@@ -108,13 +108,13 @@ processor = AutoProcessor.from_pretrained("Salesforce/blip2-opt-2.7b")
 
 # First load base model
 model_finetuned = Blip2ForConditionalGeneration.from_pretrained(
-    "/home/ldomene/CAP-GIA/blip2/checkpoints/epoch_5",
+    "CAP-GIA/blip2/checkpoints/epoch_5",
     device_map="auto",
     quantization_config=quant_config
 )
 
 
-data_path = "/home/ldomene/caption_data/receipes"
+data_path = "caption_data/receipes"
 
 test_dataset = ReceipesDataset(data_path=data_path, transform_image=False, split="test")
 val_dataloader = DataLoader(
@@ -199,7 +199,7 @@ scored_examples = list(zip(example_scores, predictions, references, images))
 scored_examples.sort(key=lambda x: x[0])
 
 # Create output directories
-output_dir = '/home/ldomene/CAP-GIA/blip2/generation_examples'
+output_dir = 'CAP-GIA/blip2/generation_examples'
 os.makedirs(output_dir, exist_ok=True)
 worst_dir = os.path.join(output_dir, 'worst_5')
 best_dir = os.path.join(output_dir, 'best_5')

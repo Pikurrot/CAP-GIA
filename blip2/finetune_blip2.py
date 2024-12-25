@@ -132,7 +132,7 @@ model = get_peft_model(model, config)
 model.print_trainable_parameters()
 
 # Inicialización del dataset
-data_path = "/home/ldomene/caption_data/receipes"
+data_path = "path/to/data"
 train_dataset = ReceipesDataset(data_path=data_path, transform_image=False, split="train")
 val_dataset = ReceipesDataset(data_path=data_path, transform_image=False, split="val")
 
@@ -268,7 +268,7 @@ for epoch in range(config.epochs):
     print(f"Checkpoint saved: {checkpoint_path}")"""
 
     #Save model using model.save_pretrained
-    path = f"/home/ldomene/CAP-GIA/blip2/checkpoints/epoch_{epoch + 1}"
+    path = f"/CAP-GIA/blip2/checkpoints/epoch_{epoch + 1}"
     model.save_pretrained(path)
 
     # Log example predictions in wandb every two epochs
@@ -294,11 +294,11 @@ print("Finish Training")
 
 
 # Guardar modelo
-os.makedirs("/home/ldomene/CAP-GIA/blip2", exist_ok=True)
-model.save_pretrained("/home/ldomene/CAP-GIA/blip2/last_model_saved")
+os.makedirs("/CAP-GIA/blip2", exist_ok=True)
+model.save_pretrained("CAP-GIA/blip2/last_model_saved")
 
 artifact = wandb.Artifact("blip-finetuned-model", type="model")
-artifact.add_dir("/home/ldomene/CAP-GIA/blip/model")
+artifact.add_dir("CAP-GIA/blip/model")
 wandb.log_artifact(artifact)
 
 wandb.finish()
