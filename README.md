@@ -27,11 +27,6 @@ bash process2job.sh
 process2job.bat
 ```
 
-## Finetuned Models
-[BLIP](https://huggingface.co/luisdomene4/BLIP-Finetune-Recipes)
-
-[BLIP2](https://huggingface.co/luisdomene4/BLIP2-Finetune-Recipes)
-
 **Args (Optional):**
 - `--gpu`: The GPU to use. Default is -1 (use all available GPUs). E.g. `--gpu 4`.
 - `--data_size`: The fraction of the dataset to train with. Default is 1.0 (use the whole dataset). E.g. `--data_size 0.25`.
@@ -53,3 +48,9 @@ sleep 3
 ```
 
 **! ! !** Additionally, if you have a [W&B](https://wandb.ai/site) account, you can track the training and evaluation of the model. Just set `log_wandb: True` in the `config/train.yml` file, and create a `.env` file in the root directory with the line `WANDB_KEY=<your_key>`.
+
+
+## Finetuned Models
+Find our finetuned models on Hugging Face:  
+- [BLIP](https://huggingface.co/luisdomene4/BLIP-Finetune-Recipes)
+- [BLIP2](https://huggingface.co/luisdomene4/BLIP2-Finetune-Recipes)
