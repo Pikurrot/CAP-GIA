@@ -1,5 +1,5 @@
 # CAP-GIA
-Image Captioning project for the Vision and Learning Subject of our AI Degree.
+Image Captioning project for Vision and Learning. *Presented to the Computer Vision Ready Tensor 2024 Competition* [Link](https://www.readytensor.ai/cv-expo-2024/)
 
 In this project, we implement a model that generates captions for images of food. The dataset can be found on [Kaggle](https://www.kaggle.com/datasets/pes12017000148/food-ingredients-and-recipe-dataset-with-images), it's a recipe dataset, where the Title (the caption we aim to generate) is the name of the recipe. It is not a trivial task, since many times the title is the technical name of the recipe, rather than a description of the food present in the image.
 
